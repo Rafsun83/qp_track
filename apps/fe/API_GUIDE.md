@@ -262,6 +262,35 @@ curl -X POST http://localhost:3001/webhook/response \
 
 ---
 
+## `POST /webhook/response/test`
+
+**API key only** — same auth as `POST /webhook/response` (`x-api-key` header, no JWT). A dry-run version of that endpoint: it does **not** persist anything to the database. Use it to check that your API key resolves to the expected `userId` and that your payload is being received/shaped correctly before wiring up the real webhook.
+
+**Body:** any JSON object, echoed back unchanged.
+
+**Success — `201 Created`:**
+
+```json
+{
+  "status": "ok",
+  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "responseData": { "surveyId": "abc123", "answers": { "q1": "yes" } }
+}
+```
+
+**Failure — `401 Unauthorized`:** missing, invalid, or revoked API key.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3001/webhook/response/test \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: sk-live_..." \
+  -d '{"surveyId": "abc123", "answers": {"q1": "yes"}}'
+```
+
+---
+
 ## `GET /api/survey-response`
 
 **Requires auth** (JWT, via the global `AuthGuard` — no `@Public()` on this route, unlike the webhook above). Lists stored survey responses, with an optional filter.

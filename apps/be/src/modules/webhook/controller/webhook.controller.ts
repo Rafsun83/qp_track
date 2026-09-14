@@ -18,4 +18,18 @@ export class WebhookController {
     await this.surveyResponseService.createSurveyResponse(request.userId, data);
     return { status: 'ok' };
   }
+
+  @Public()
+  @UseGuards(ApiKeyGuard)
+  @Post('/response/test')
+  async handleTestWebhook(
+    @Req() request: Request & { userId: string },
+    @Body() data: any,
+  ) {
+    return {
+      status: 'ok',
+      userId: request.userId,
+      responseData: data,
+    };
+  }
 }
