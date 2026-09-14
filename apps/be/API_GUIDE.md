@@ -141,6 +141,23 @@ curl -X POST http://localhost:3001/api-key \
 
 ---
 
+## `DELETE /api-key/delete`
+
+**Requires auth.** Revokes an API key belonging to the authenticated user (sets `revokedAt`). A revoked key is immediately rejected by `ApiKeyGuard` on any endpoint that uses it (e.g. `GET /api/users/:id`, `POST /webhook/response`).
+
+No body or params — the key to revoke is looked up **by `userId` alone**, not by key id. If a user has more than one key, this revokes whichever one the lookup happens to return first, not a specific one you choose. There's currently no way to target one key among several by id.
+
+**Failure — `404 Not Found`:** the user has no matching API key to revoke.
+
+**Example:**
+
+```bash
+curl -X DELETE http://localhost:3001/api-key/delete \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 ## `GET /api/users`
 
 **Requires auth.** Lists users, with optional search/filter via query params. No params returns every user.
@@ -208,6 +225,79 @@ curl http://localhost:3001/api/users/df7db73d-f047-44d5-9d51-62ec043bfe0e \
 ```
 
 **Success — `200 OK`:** the user object, or `null` if no user has that id (the endpoint doesn't 404 on a missing id — a `null` body is returned).
+
+---
+
+## `POST /webhook/response`
+
+**API key only** — same auth model as `GET /api/users/:id`: excluded from the global `AuthGuard`, protected instead by `ApiKeyGuard` via an `x-api-key` header (get one from `POST /api-key`). No JWT accepted.
+
+Intended as a webhook target (e.g. a survey platform posting responses back to you). The `userId` stored on the record is **not** taken from the body — it's resolved from whichever API key made the request.
+
+**Body:** any JSON object — it's stored as-is, no schema validation:
+
+```json
+{
+  "surveyId": "abc123",
+  "answers": { "q1": "yes", "q2": 5 }
+}
+```
+
+**Success — `201 Created`:**
+
+```json
+{ "status": "ok" }
+```
+
+**Failure — `401 Unauthorized`:** missing, invalid, or revoked API key.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3001/webhook/response \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: sk-live_..." \
+  -d '{"surveyId": "abc123", "answers": {"q1": "yes"}}'
+```
+
+---
+
+## `GET /api/survey-response`
+
+**Requires auth** (JWT, via the global `AuthGuard` — no `@Public()` on this route, unlike the webhook above). Lists stored survey responses, with an optional filter.
+
+| Query param | Type   | Behavior                                                  |
+|-------------|--------|------------------------------------------------------------|
+| `userId`    | string | Filter — only responses whose `userId` matches exactly     |
+
+Omitting `userId` returns every survey response in the table (no ownership scoping — any authenticated user can list all responses, not just their own).
+
+**Example:**
+
+```bash
+# All survey responses
+curl http://localhost:3001/api/survey-response \
+  -H "Authorization: Bearer <token>"
+
+# Only responses recorded under a specific userId (the id of whoever owned the API key that posted them)
+curl "http://localhost:3001/api/survey-response?userId=df7db73d-f047-44d5-9d51-62ec043bfe0e" \
+  -H "Authorization: Bearer <token>"
+```
+
+**Success — `200 OK`:** an array of survey response records, e.g.:
+
+```json
+[
+  {
+    "id": "3f9a2b10-...",
+    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "responseData": { "surveyId": "abc123", "answers": { "q1": "yes" } },
+    "createdAt": "2026-09-14T02:07:28.920Z"
+  }
+]
+```
+
+An empty array `[]` (not an error) if nothing matches.
 
 ---
 
