@@ -46,15 +46,15 @@ export class ApiKeyService {
     return candidate;
   }
 
-  // async getLatestApiKey(userId: string) {
-  //   const key = await this.apiKeyRepository.findOne({
-  //     where: { userId },
-  //     order: { createdAt: 'DESC' },
-  //   });
-  //   if (!key) throw new NotFoundException('No API key found for this user');
+  async getLatestApiKey(userId: string) {
+    const key = await this.apiKeyRepository.findOne({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+    if (!key) throw new NotFoundException('No API key found for this user');
 
-  //   return key;
-  // }
+    return key;
+  }
 
   async revokeApiKey(userId: string) {
     const key = await this.apiKeyRepository.findOne({
