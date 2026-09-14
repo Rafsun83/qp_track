@@ -3,10 +3,11 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { createObserveModule } from '@nestjs/observe';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ApiKeyModule } from './modules/apiKey/api-key.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { jwtConstants } from './modules/auth/constant/constants.js';
-import { ApiKeyModule } from './modules/apiKey/api-key.module.js';
 import { UserModules } from './modules/users/userModules.js';
+import { WebhookModules } from './modules/webhook/webhook.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -38,6 +39,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       signOptions: { expiresIn: '1h' },
     }),
     UserModules,
+    WebhookModules,
     AuthModule,
     ApiKeyModule,
   ],
