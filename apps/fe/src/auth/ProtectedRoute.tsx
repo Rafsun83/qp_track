@@ -8,9 +8,9 @@ export function ProtectedRoute() {
   return <Outlet />;
 }
 
-/** Guards login/register: an already-authenticated user is sent straight to /users. */
+/** Guards login/register: an already-authenticated user is sent straight to /profile. */
 export function PublicOnlyRoute() {
   const { isAuthenticated } = useAuth();
-  if (isAuthenticated) return <Navigate to="/users" replace />;
+  if (isAuthenticated) return <Navigate to="/profile" replace />;
   return <Outlet />;
 }

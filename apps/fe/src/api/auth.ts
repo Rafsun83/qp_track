@@ -23,7 +23,7 @@ export interface RegisterPayload {
   password: string;
 }
 
-/** POST /api/users - public. */
+/** POST /auth/register - public. */
 export function register(payload: RegisterPayload): Promise<User> {
-  return apiRequest<User>("/api/users", { method: "POST", body: payload });
+  return apiRequest<User>("/auth/register", { method: "POST", body: payload });
 }

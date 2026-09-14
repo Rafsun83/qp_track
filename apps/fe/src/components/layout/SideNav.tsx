@@ -2,10 +2,8 @@ import { NavLink } from "react-router-dom";
 import "./SideNav.css";
 
 const NAV_ITEMS = [
-  { to: "/users", label: "Users" },
-  { to: "/api-keys", label: "API Key" },
-  { to: "/webhook-test", label: "Webhook Test" },
-  { to: "/survey-responses", label: "Survey Response" },
+  { to: "/dashboard", label: "Dashboard" },
+  { to: "/profile", label: "Profile" },
 ];
 
 export function SideNav() {
@@ -17,7 +15,9 @@ export function SideNav() {
             <NavLink
               to={item.to}
               className={({ isActive }) =>
-                isActive ? "side-nav__link side-nav__link--active" : "side-nav__link"
+                isActive
+                  ? "side-nav__link side-nav__link--active"
+                  : "side-nav__link"
               }
             >
               {item.label}

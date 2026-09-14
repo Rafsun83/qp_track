@@ -6,7 +6,7 @@ Every request/response body is JSON. Send `Content-Type: application/json` on an
 
 ## Authentication — read this first
 
-Every endpoint in this API requires a JWT **except** the two marked "Public" below (`POST /auth/login`, `POST /api/users`). This is enforced globally by `AuthGuard` (`apps/be/src/modules/auth/guard/auth.guard.ts`) — there's no per-route opt-in needed for protection; a route is only public if it's explicitly decorated `@Public()`.
+Every endpoint in this API requires a JWT **except** the two marked "Public" below (`POST /auth/login`, `POST /auth/register`). This is enforced globally by `AuthGuard` (`apps/be/src/modules/auth/guard/auth.guard.ts`) — there's no per-route opt-in needed for protection; a route is only public if it's explicitly decorated `@Public()`.
 
 To call a protected endpoint, add the token you got from login as a header:
 
@@ -56,9 +56,9 @@ curl -X POST http://localhost:3001/auth/login \
 
 ---
 
-## `POST /api/users`
+## `POST /auth/register`
 
-**Public.** Creates (registers) a new user.
+**Public.** Creates (registers) a new user. Lives on `AuthController` (`apps/be/src/modules/auth/controller/auth.controller.ts`) now, not `UserController` — it was moved there but still calls the same `UserService.create`, so the request/response shape is unchanged, only the route moved (previously `POST /api/users`).
 
 **Body (`CreateUserDto`):**
 
@@ -93,7 +93,7 @@ Any field not in this list is rejected outright (`400 Bad Request`) — the API 
 **Example:**
 
 ```bash
-curl -X POST http://localhost:3001/api/users \
+curl -X POST http://localhost:3001/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Jane Doe",
@@ -143,7 +143,7 @@ curl -X POST http://localhost:3001/api-key \
 
 ## `DELETE /api-key/delete`
 
-**Requires auth.** Revokes an API key belonging to the authenticated user (sets `revokedAt`). A revoked key is immediately rejected by `ApiKeyGuard` on any endpoint that uses it (e.g. `GET /api/users/:id`, `POST /webhook/response`).
+**Requires auth.** Revokes an API key belonging to the authenticated user (sets `revokedAt`). A revoked key is immediately rejected by `ApiKeyGuard` on any endpoint that uses it (e.g. `POST /webhook/response`, `POST /webhook/response/test`) — note `GET /api/users/:id` **no longer** uses `ApiKeyGuard` (see below); it now requires a JWT like everything else.
 
 No body or params — the key to revoke is looked up **by `userId` alone**, not by key id. If a user has more than one key, this revokes whichever one the lookup happens to return first, not a specific one you choose. There's currently no way to target one key among several by id.
 
@@ -257,15 +257,15 @@ An empty array `[]` (not an error) if nothing matches.
 
 ## `GET /api/users/:id`
 
-**API key only** — fetches a single user by their `id` (UUID). This route does **not** accept a JWT; it's excluded from the global `AuthGuard` and protected instead by `ApiKeyGuard`, which requires an `x-api-key` header (get one from `POST /api-key`).
+**Requires auth (JWT).** Fetches a single user by their `id` (UUID). This used to be API-key-only (`@Public()` + `ApiKeyGuard`); both have been removed from the route, so it now falls under the global `AuthGuard` like every other non-public endpoint — send a bearer token, not an `x-api-key` header.
 
-**Failure — `401 Unauthorized`:** missing/invalid/revoked API key. A `Bearer` token alone is not accepted here.
+**Failure — `401 Unauthorized`:** missing header, malformed header, or an invalid/expired token. An `x-api-key` header alone is **no longer** accepted here.
 
 **Example:**
 
 ```bash
 curl http://localhost:3001/api/users/df7db73d-f047-44d5-9d51-62ec043bfe0e \
-  -H "x-api-key: sk-live_..."
+  -H "Authorization: Bearer <token>"
 ```
 
 **Success — `200 OK`:** the user object, or `null` if no user has that id (the endpoint doesn't 404 on a missing id — a `null` body is returned).

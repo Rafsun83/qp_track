@@ -34,3 +34,10 @@ export function isTokenExpired(token: string): boolean {
   if (expiryMs === null) return true;
   return Date.now() >= expiryMs;
 }
+
+/** The signed-in user's id, from the `sub` claim set by the backend at login. */
+export function getUserIdFromToken(token: string): string | null {
+  const payload = decodeJwt(token);
+  const sub = payload?.sub;
+  return typeof sub === "string" ? sub : null;
+}

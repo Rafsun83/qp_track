@@ -9,12 +9,13 @@ import {
   type ReactNode,
 } from "react";
 import { setUnauthorizedHandler } from "../api/client";
-import { getTokenExpiryMs, isTokenExpired } from "./jwt";
+import { getTokenExpiryMs, getUserIdFromToken, isTokenExpired } from "./jwt";
 
 const TOKEN_STORAGE_KEY = "access_token";
 
 interface AuthContextValue {
   token: string | null;
+  userId: string | null;
   isAuthenticated: boolean;
   login: (token: string) => void;
   logout: () => void;
@@ -80,9 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [token, logout]);
 
+  const userId = useMemo(() => (token ? getUserIdFromToken(token) : null), [token]);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ token, isAuthenticated: token !== null, login, logout }),
-    [token, login, logout],
+    () => ({ token, userId, isAuthenticated: token !== null, login, logout }),
+    [token, userId, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
