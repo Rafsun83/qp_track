@@ -1,4 +1,3 @@
-import { Exclude } from 'class-transformer';
 import {
   Column,
   CreateDateColumn,
@@ -18,7 +17,6 @@ export class ApiKey {
   prefix: string;
 
   @Column()
-  @Exclude()
   hashedKey: string;
 
   @Column({ nullable: true })
