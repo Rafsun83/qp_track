@@ -160,7 +160,11 @@ curl -X DELETE http://localhost:3001/api-key/delete \
 
 ## `GET /api-key/latest`
 
-**Requires auth.** Returns metadata for the authenticated user's most recently created API key (by `createdAt`, regardless of whether it's since been revoked). Useful for showing "you have a key ending in ..., created on ..., revoked: yes/no" without needing to store the raw key client-side — the raw key itself is never returned here (or anywhere after `POST /api-key`), only its metadata.
+**Requires auth.** Returns metadata for the authenticated user's most recently created API key (by `createdAt`, regardless of whether it's since been revoked).
+
+> ⚠️ **This does NOT return the usable key string.** Only `POST /api-key`'s response ever contains the raw `apiKey` value, and only once, at creation time. The database stores a one-way bcrypt hash of the key (`hashedKey`, never exposed by any endpoint) — there is no way to recover the original key string from it, by anyone, including this endpoint. If the raw key wasn't saved when it was generated, the only fix is to revoke it (`DELETE /api-key/delete`) and generate a new one (`POST /api-key`).
+
+**Intended usage:** checking whether the user already has a key and its status — e.g. to render "Active key: `sk-live_6928426a...` (label: *my first key*), created Sep 14" in a UI, or to decide whether to show a "Generate key" vs. "Generate new key" button — not for retrieving a key to actually use in requests.
 
 **Success — `200 OK`:**
 
@@ -176,11 +180,18 @@ curl -X DELETE http://localhost:3001/api-key/delete \
 }
 ```
 
-`revokedAt` is `null` while the key is active, or a timestamp once it's been revoked via `DELETE /api-key/delete`.
+`prefix` is the first 16 characters of the original key (enough to recognize it in a UI, not enough to authenticate with — `ApiKeyGuard` requires the full key). `revokedAt` is `null` while the key is active, or a timestamp once it's been revoked via `DELETE /api-key/delete`.
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
 - `404 Not Found` — the user has never generated an API key.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api-key/latest \
+  -H "Authorization: Bearer <token>"
+```
 
 **Example:**
 

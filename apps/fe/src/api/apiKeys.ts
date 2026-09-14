@@ -1,5 +1,5 @@
-import { apiRequest } from "./client";
-import type { RevokedApiKey } from "../types/apiKey";
+import { ApiError, apiRequest } from "./client";
+import type { ApiKeyMeta, RevokedApiKey } from "../types/apiKey";
 
 export interface GenerateApiKeyResponse {
   apiKey: string;
@@ -21,4 +21,19 @@ export function generateApiKey(token: string, label?: string): Promise<GenerateA
  */
 export function revokeApiKey(token: string): Promise<RevokedApiKey> {
   return apiRequest<RevokedApiKey>("/api-key/delete", { method: "DELETE", token });
+}
+
+/**
+ * GET /api-key/latest - requires auth. Never returns the raw key (only bcrypt
+ * hashes are stored server-side) - just metadata for checking whether the
+ * user still has an active key. Returns null instead of throwing on 404
+ * (the user has never generated a key).
+ */
+export async function getLatestApiKey(token: string): Promise<ApiKeyMeta | null> {
+  try {
+    return await apiRequest<ApiKeyMeta>("/api-key/latest", { token });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
 }

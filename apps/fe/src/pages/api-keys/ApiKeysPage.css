@@ -9,6 +9,12 @@
   color: var(--text);
 }
 
+.api-keys-page__status {
+  padding: 20px 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
 .api-keys-card {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -27,6 +33,10 @@
   margin: 0 0 16px;
   font-size: 14px;
   color: var(--text);
+}
+
+.api-keys-card__revoke {
+  margin-top: 16px;
 }
 
 .api-keys-form {

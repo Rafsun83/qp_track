@@ -1,4 +1,4 @@
-export interface RevokedApiKey {
+export interface ApiKeyMeta {
   id: string;
   userId: string;
   prefix: string;
@@ -7,3 +7,5 @@ export interface RevokedApiKey {
   lastUpdatedAt: string | null;
   revokedAt: string | null;
 }
+
+export type RevokedApiKey = ApiKeyMeta;

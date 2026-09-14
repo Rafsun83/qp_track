@@ -1,20 +1,75 @@
-import { useState, type ChangeEvent, type FormEvent } from "react";
-import { generateApiKey, revokeApiKey } from "../../api/apiKeys";
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { generateApiKey, getLatestApiKey, revokeApiKey } from "../../api/apiKeys";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { Alert } from "../../components/ui/Alert";
+import type { ApiKeyMeta } from "../../types/apiKey";
+import { clearStoredApiKey, readStoredApiKey, writeStoredApiKey } from "./apiKeyStorage";
 import "./ApiKeysPage.css";
 
 export function ApiKeysPage() {
   const { token } = useAuth();
 
+  const [loading, setLoading] = useState(true);
+  const [meta, setMeta] = useState<ApiKeyMeta | null>(null);
+  const [rawKey, setRawKey] = useState<string | null>(null);
+
   const [label, setLabel] = useState("");
-  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  /**
+   * Single source of truth for "what's the current key": re-fetches
+   * GET /api-key/latest and reconciles it with whatever's cached in
+   * localStorage. Callers never clear/mutate storage themselves - they just
+   * call this afterward and let it decide (no active key, or a different
+   * key's id than what's cached, both fall out to clearing storage here).
+   */
+  const refreshLatest = useCallback(async () => {
+    if (!token) return;
+
+    const latest = await getLatestApiKey(token);
+    const active = latest && !latest.revokedAt ? latest : null;
+    setMeta(active);
+
+    if (!active) {
+      clearStoredApiKey();
+      setRawKey(null);
+      return;
+    }
+
+    const stored = readStoredApiKey();
+    if (stored && stored.id === active.id) {
+      setRawKey(stored.apiKey);
+    } else {
+      if (stored) clearStoredApiKey();
+      setRawKey(null);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    let cancelled = false;
+    setLoading(true);
+
+    refreshLatest()
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.message : "Failed to load API key status.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, refreshLatest]);
 
   async function handleGenerate(event: FormEvent) {
     event.preventDefault();
@@ -25,9 +80,25 @@ export function ApiKeysPage() {
     setGenerating(true);
     try {
       const { apiKey } = await generateApiKey(token, label.trim() || undefined);
-      setGeneratedKey(apiKey);
+
+      // The key was already generated at this point - show it no matter what
+      // happens next, so a hiccup fetching metadata never hides the one
+      // chance the user gets to see/copy the raw value.
+      setRawKey(apiKey);
       setCopied(false);
       setLabel("");
+      setMessage("API key generated.");
+
+      try {
+        const latest = await getLatestApiKey(token);
+        if (latest) {
+          writeStoredApiKey({ id: latest.id, apiKey });
+          setMeta(latest);
+        }
+      } catch {
+        // Metadata (label/created date/id for local caching) failed to load,
+        // but the raw key above is still valid and shown - not fatal.
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to generate API key.");
     } finally {
@@ -36,9 +107,9 @@ export function ApiKeysPage() {
   }
 
   async function handleCopy() {
-    if (!generatedKey) return;
+    if (!rawKey) return;
     try {
-      await navigator.clipboard.writeText(generatedKey);
+      await navigator.clipboard.writeText(rawKey);
       setCopied(true);
     } catch {
       setError("Couldn't copy to clipboard - please copy it manually.");
@@ -56,9 +127,9 @@ export function ApiKeysPage() {
     setRevoking(true);
     try {
       await revokeApiKey(token);
-      setMessage("API key revoked.");
-      setGeneratedKey(null);
+      await refreshLatest();
       setCopied(false);
+      setMessage("API key revoked.");
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 404
@@ -82,54 +153,80 @@ export function ApiKeysPage() {
       {error && <Alert variant="error">{error}</Alert>}
       {message && <Alert variant="success">{message}</Alert>}
 
-      <div className="api-keys-card">
-        <h2 className="api-keys-card__title">Generate a new key</h2>
-        <form className="api-keys-form" onSubmit={handleGenerate}>
-          <div className="api-keys-field">
-            <label htmlFor="label">Label (optional)</label>
-            <input
-              id="label"
-              type="text"
-              placeholder="e.g. survey webhook"
-              value={label}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => setLabel(event.target.value)}
-            />
-          </div>
-          <button type="submit" className="api-keys-btn api-keys-btn--primary" disabled={generating}>
-            {generating ? "Generating..." : "Generate key"}
-          </button>
-        </form>
+      {loading && <p className="api-keys-page__status">Checking for an existing key...</p>}
 
-        {generatedKey && (
-          <div className="api-keys-key-box">
-            <p className="api-keys-key-box__hint">
-              Save this now - it's shown only once and can't be retrieved again.
-            </p>
-            <div className="api-keys-key-box__row">
-              <code className="api-keys-key-box__value">{generatedKey}</code>
-              <button type="button" className="api-keys-btn" onClick={handleCopy}>
-                {copied ? "Copied!" : "Copy"}
-              </button>
+      {!loading && (meta || rawKey) && (
+        <div className="api-keys-card">
+          <h2 className="api-keys-card__title">Your API key</h2>
+
+          {rawKey ? (
+            <div className="api-keys-key-box">
+              {meta && (
+                <p className="api-keys-key-box__hint">
+                  {meta.label ? `Label: ${meta.label}. ` : ""}
+                  Created {new Date(meta.createdAt).toLocaleString()}.
+                </p>
+              )}
+              <div className="api-keys-key-box__row">
+                <code className="api-keys-key-box__value">{rawKey}</code>
+                <button type="button" className="api-keys-btn" onClick={handleCopy}>
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          ) : (
+            meta && (
+              <div className="api-keys-key-box">
+                <p className="api-keys-key-box__hint">
+                  The full key isn't available on this device - it's only ever shown once, right
+                  after it's generated. Here's what's on record for it:
+                </p>
+                <div className="api-keys-key-box__row">
+                  <code className="api-keys-key-box__value">{meta.prefix}••••••••••••••••</code>
+                </div>
+                <p className="api-keys-key-box__hint">
+                  {meta.label ? `Label: ${meta.label}. ` : ""}
+                  Created {new Date(meta.createdAt).toLocaleString()}.
+                </p>
+              </div>
+            )
+          )}
 
-      <div className="api-keys-card">
-        <h2 className="api-keys-card__title">Revoke key</h2>
-        <p className="api-keys-card__text">
-          This revokes your API key. Any request using it (including the webhook test page) will
-          be rejected afterward.
-        </p>
-        <button
-          type="button"
-          className="api-keys-btn api-keys-btn--danger"
-          onClick={handleRevoke}
-          disabled={revoking}
-        >
-          {revoking ? "Revoking..." : "Revoke API key"}
-        </button>
-      </div>
+          <button
+            type="button"
+            className="api-keys-btn api-keys-btn--danger api-keys-card__revoke"
+            onClick={handleRevoke}
+            disabled={revoking}
+          >
+            {revoking ? "Revoking..." : "Revoke API key"}
+          </button>
+        </div>
+      )}
+
+      {!loading && !meta && !rawKey && (
+        <div className="api-keys-card">
+          <h2 className="api-keys-card__title">Generate a new key</h2>
+          <form className="api-keys-form" onSubmit={handleGenerate}>
+            <div className="api-keys-field">
+              <label htmlFor="label">Label (optional)</label>
+              <input
+                id="label"
+                type="text"
+                placeholder="e.g. survey webhook"
+                value={label}
+                onChange={(event: ChangeEvent<HTMLInputElement>) => setLabel(event.target.value)}
+              />
+            </div>
+            <button
+              type="submit"
+              className="api-keys-btn api-keys-btn--primary"
+              disabled={generating}
+            >
+              {generating ? "Generating..." : "Generate key"}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
