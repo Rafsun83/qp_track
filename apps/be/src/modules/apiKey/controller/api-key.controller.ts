@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../../auth/guard/auth.guard.js';
 import { ApiKeyService } from '../service/api-key.service.js';
@@ -16,14 +16,9 @@ export class ApiKeyController {
     return this.apiKeyService.generateApiKey(req.user.sub, label);
   }
 
-  //   @UseGuards(AuthGuard)
-  //   @Delete(':id')
-  //   async revoke(@Param('id') id: string, @Req() req) {
-  //     const key = await this.apikeyRepository.findOne({
-  //       where: { id, userId: req.user.id },
-  //     });
-  //     if (!key) throw new NotFoundException();
-  //     key.revokedAt = new Date();
-  //     return this.apikeyRepository.save(key);
-  //   }
+  @UseGuards(AuthGuard)
+  @Delete('delete')
+  async revoke(@Req() req: Request & { user: { sub: string } }) {
+    return this.apiKeyService.revokeApiKey(req.user.sub);
+  }
 }

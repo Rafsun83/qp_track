@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -44,5 +44,15 @@ export class ApiKeyService {
     await this.apiKeyRepository.save(candidate);
 
     return candidate;
+  }
+
+  async revokeApiKey(userId: string) {
+    const key = await this.apiKeyRepository.findOne({
+      where: { userId },
+    });
+    if (!key) throw new NotFoundException('API key not found');
+
+    key.revokedAt = new Date();
+    return this.apiKeyRepository.save(key);
   }
 }
