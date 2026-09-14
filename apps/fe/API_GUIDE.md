@@ -158,6 +158,39 @@ curl -X DELETE http://localhost:3001/api-key/delete \
 
 ---
 
+## `GET /api-key/latest`
+
+**Requires auth.** Returns metadata for the authenticated user's most recently created API key (by `createdAt`, regardless of whether it's since been revoked). Useful for showing "you have a key ending in ..., created on ..., revoked: yes/no" without needing to store the raw key client-side — the raw key itself is never returned here (or anywhere after `POST /api-key`), only its metadata.
+
+**Success — `200 OK`:**
+
+```json
+{
+  "id": "3f9a2b10-...",
+  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "prefix": "sk-live_6928426a",
+  "label": "my first key",
+  "createdAt": "2026-09-14T02:07:28.920Z",
+  "lastUpdatedAt": "2026-09-14T03:00:00.000Z",
+  "revokedAt": null
+}
+```
+
+`revokedAt` is `null` while the key is active, or a timestamp once it's been revoked via `DELETE /api-key/delete`.
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `404 Not Found` — the user has never generated an API key.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api-key/latest \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 ## `GET /api/users`
 
 **Requires auth.** Lists users, with optional search/filter via query params. No params returns every user.

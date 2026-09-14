@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../../auth/guard/auth.guard.js';
 import { ApiKeyService } from '../service/api-key.service.js';
@@ -14,6 +14,12 @@ export class ApiKeyController {
     @Body('label') label?: string,
   ) {
     return this.apiKeyService.generateApiKey(req.user.sub, label);
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('latest')
+  async getLatest(@Req() req: Request & { user: { sub: string } }) {
+    return this.apiKeyService.getLatestApiKey(req.user.sub);
   }
 
   @UseGuards(AuthGuard)

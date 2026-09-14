@@ -1,0 +1,112 @@
+.survey-responses-page__title {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.survey-responses-page__subtitle {
+  margin: 0 0 20px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.survey-responses-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.survey-responses-filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.survey-responses-filters__field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.survey-responses-filters__field input {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-h);
+  min-width: 300px;
+}
+
+.survey-responses-filters__field input:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -1px;
+}
+
+.survey-responses-filters__clear {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.survey-responses-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.survey-responses-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.survey-responses-table th,
+.survey-responses-table td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.survey-responses-table th {
+  background: var(--code-bg);
+  color: var(--text-h);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.survey-responses-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.survey-responses-table tbody tr:hover {
+  background: var(--accent-bg);
+}
+
+.survey-responses-table__json {
+  margin: 0;
+  max-width: 320px;
+  max-height: 140px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.survey-responses-page__status {
+  padding: 20px 0;
+  color: var(--text);
+  font-size: 14px;
+}

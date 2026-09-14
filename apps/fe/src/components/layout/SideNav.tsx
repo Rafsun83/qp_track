@@ -1,7 +1,12 @@
 import { NavLink } from "react-router-dom";
 import "./SideNav.css";
 
-const NAV_ITEMS = [{ to: "/users", label: "Users" }];
+const NAV_ITEMS = [
+  { to: "/users", label: "Users" },
+  { to: "/api-keys", label: "API Key" },
+  { to: "/webhook-test", label: "Webhook Test" },
+  { to: "/survey-responses", label: "Survey Response" },
+];
 
 export function SideNav() {
   return (

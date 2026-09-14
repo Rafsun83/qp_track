@@ -22,6 +22,8 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   token?: string | null;
+  /** Extra headers, e.g. `x-api-key` for API-key-protected endpoints. */
+  headers?: Record<string, string>;
 }
 
 function extractErrorMessage(body: unknown, fallback: string): string {
@@ -34,9 +36,9 @@ function extractErrorMessage(body: unknown, fallback: string): string {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, token } = options;
+  const { method = "GET", body, token, headers: extraHeaders } = options;
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...extraHeaders };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
 

@@ -1,0 +1,95 @@
+.webhook-test-page__title {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.webhook-test-page__subtitle {
+  margin: 0 0 20px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.webhook-test-page__subtitle code {
+  font-size: 13px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--code-bg);
+  color: var(--text-h);
+}
+
+.webhook-test-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 560px;
+  margin-bottom: 24px;
+}
+
+.webhook-test-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.webhook-test-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.webhook-test-field input,
+.webhook-test-field textarea {
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.webhook-test-field textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.webhook-test-field input:focus,
+.webhook-test-field textarea:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -1px;
+}
+
+.webhook-test-submit {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.webhook-test-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.webhook-test-result {
+  max-width: 560px;
+}
+
+.webhook-test-result__json {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--code-bg);
+  color: var(--text-h);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  overflow-x: auto;
+}
