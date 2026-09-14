@@ -10,15 +10,12 @@ export class SurveyResponseService {
     private surveyResponseRepository: Repository<SurveyResponse>,
   ) {}
 
-  async findAll(query: any): Promise<SurveyResponse[]> {
-    const qb =
-      this.surveyResponseRepository.createQueryBuilder('surveyResponse');
-
-    if (query.userId) {
-      qb.andWhere('surveyResponse.userId = :userId', { userId: query.userId });
-    }
-
-    return qb.getMany();
+  async findAll(userId: string) {
+    const responses = this.surveyResponseRepository.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+    return responses;
   }
 
   async createSurveyResponse(
