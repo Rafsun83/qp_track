@@ -6,6 +6,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ApiKeyModule } from './modules/apiKey/api-key.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { jwtConstants } from './modules/auth/constant/constants.js';
+import { OrganizationMembersModule } from './modules/organization_members/organization_member.module.js';
+import { OrganizationsModule } from './modules/organizations/organizations.module.js';
 import { SurveyResponseModule } from './modules/survey_response/survey_response.module.js';
 import { UserModules } from './modules/users/userModules.js';
 import { WebhookModules } from './modules/webhook/webhook.module.js';
@@ -41,11 +43,11 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     }),
     UserModules,
     SurveyResponseModule,
+    OrganizationsModule,
+    OrganizationMembersModule,
     WebhookModules,
     AuthModule,
     ApiKeyModule,
   ],
-  // controllers: [AppController],
-  // providers: [AppService],
 })
 export class AppModule {}
