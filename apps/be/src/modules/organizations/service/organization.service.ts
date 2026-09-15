@@ -46,11 +46,14 @@ export class OrganizationService {
   async findAll(userId: string) {
     return this.organizationRepository.find({
       where: { ownerId: userId },
-      relations: { members: { user: true, organization: true }, owner: {} },
+      relations: { members: { user: true }, owner: {} },
     });
   }
 
   async findOne(id: string) {
-    return this.organizationRepository.findOneBy({ id });
+    return this.organizationRepository.findOne({
+      where: { id },
+      relations: { members: { user: true } },
+    });
   }
 }
