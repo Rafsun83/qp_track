@@ -5,7 +5,7 @@ export class OrganizationMemberCreateDto {
   @IsNotEmpty()
   userId: string;
 
-  @IsString()
-  @IsNotEmpty()
-  organizationId: string;
+  // @IsString()
+  // @IsNotEmpty()
+  // organizationId: string;
 }

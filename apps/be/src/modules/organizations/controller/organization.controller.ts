@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  Request,
+} from '@nestjs/common';
 import { CreateOrganizationDto } from '../dto/create-organization.dto.js';
 import { OrganizationService } from '../service/organization.service.js';
 
@@ -6,7 +14,7 @@ import { OrganizationService } from '../service/organization.service.js';
 export class OrganizationController {
   constructor(private readonly organizationService: OrganizationService) {}
 
-  @Post('/organizations')
+  @Post('organizations')
   createOrganization(
     @Body() organizationData: CreateOrganizationDto,
     @Req() req: Request & { user: { sub: string } },
@@ -17,8 +25,13 @@ export class OrganizationController {
     );
   }
 
-  @Get('/organizations')
-  findAllOrganization() {
-    return this.organizationService.findAll();
+  @Get('organizations')
+  findAllOrganization(@Request() req: { user: { sub: string } }) {
+    return this.organizationService.findAll(req.user.sub);
+  }
+
+  @Get('organizations/:id')
+  findOneOrganization(@Param('id') id: string) {
+    return this.organizationService.findOne(id);
   }
 }

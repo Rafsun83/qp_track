@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { OrganizationMember } from '../../organization_members/entity/organization_member.entity.js';
 import { OrganizationMemberService } from '../../organization_members/service/organization_member.service.js';
 import { CreateOrganizationDto } from '../dto/create-organization.dto.js';
 import { Organizations } from '../entity/organization.entity.js';
@@ -25,10 +26,15 @@ export class OrganizationService {
         name: organization.name,
       });
 
-      await this.organizationMemberService.createOrganizationMember({
+      await manager.save(OrganizationMember, {
         organizationId: savedOrganization.id,
         userId: ownerId,
       });
+
+      // await this.organizationMemberService.createOrganizationMember({
+      //   organizationId: savedOrganization.id,
+      //   userId: ownerId,
+      // });
 
       return manager.findOneOrFail(Organizations, {
         where: { id: savedOrganization.id },
@@ -37,9 +43,14 @@ export class OrganizationService {
     });
   }
 
-  async findAll() {
+  async findAll(userId: string) {
     return this.organizationRepository.find({
+      where: { ownerId: userId },
       relations: { members: { user: true, organization: true }, owner: {} },
     });
+  }
+
+  async findOne(id: string) {
+    return this.organizationRepository.findOneBy({ id });
   }
 }
