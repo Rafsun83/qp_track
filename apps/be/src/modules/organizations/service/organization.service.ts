@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { OrganizationMember } from '../../organization_members/entity/organization_member.entity.js';
+import { OrganizationMemberService } from '../../organization_members/service/organization_member.service.js';
 import { CreateOrganizationDto } from '../dto/create-organization.dto.js';
 import { Organizations } from '../entity/organization.entity.js';
 
@@ -12,6 +12,7 @@ export class OrganizationService {
     private readonly organizationRepository: Repository<Organizations>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly organizationMemberService: OrganizationMemberService,
   ) {}
 
   async createOrganization(
@@ -24,7 +25,7 @@ export class OrganizationService {
         name: organization.name,
       });
 
-      await manager.save(OrganizationMember, {
+      await this.organizationMemberService.createOrganizationMember({
         organizationId: savedOrganization.id,
         userId: ownerId,
       });

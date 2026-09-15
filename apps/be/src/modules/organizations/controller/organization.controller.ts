@@ -17,7 +17,7 @@ export class OrganizationController {
     );
   }
 
-  @Get('/organization')
+  @Get('/organizations')
   findAllOrganization() {
     return this.organizationService.findAll();
   }

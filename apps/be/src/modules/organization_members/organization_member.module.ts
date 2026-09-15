@@ -8,5 +8,6 @@ import { OrganizationMemberService } from './service/organization_member.service
   imports: [TypeOrmModule.forFeature([OrganizationMember])],
   controllers: [OrganizationMemberController],
   providers: [OrganizationMemberService],
+  exports: [OrganizationMemberService],
 })
 export class OrganizationMembersModule {}
