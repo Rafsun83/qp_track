@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OrganizationMemberCreateDto } from '../dto/organization-member-create-dto.js';
 import { OrganizationMember } from '../entity/organization_member.entity.js';
+import { OrganizationRole } from '../enum/organization-role.enum.js';
 
 @Injectable()
 export class OrganizationMemberService {
@@ -19,7 +20,7 @@ export class OrganizationMemberService {
   async createOrganizationMember(
     organizationId: string,
     actorId: string,
-    { userId }: OrganizationMemberCreateDto,
+    { userId, role }: OrganizationMemberCreateDto,
   ) {
     const isActorMember = await this.organizationMemberRepository.findOne({
       where: { organizationId, userId: actorId },
@@ -40,6 +41,7 @@ export class OrganizationMemberService {
     return this.organizationMemberRepository.save({
       organizationId,
       userId,
+      role,
     });
   }
 
@@ -50,18 +52,16 @@ export class OrganizationMemberService {
     });
   }
 
-  async deleteMember(
-    organizationId: string,
-    actorId: string,
-    userId: string,
-  ) {
+  async deleteMember(organizationId: string, actorId: string, userId: string) {
     const isActorMember = await this.organizationMemberRepository.findOne({
       where: { organizationId, userId: actorId },
     });
     if (!isActorMember) {
-      throw new ForbiddenException(
-        'You are not a member of this organization',
-      );
+      throw new ForbiddenException('You are not a member of this organization');
+    }
+
+    if (isActorMember.role === OrganizationRole.OWNER) {
+      throw new ForbiddenException('Owner will not delete');
     }
 
     const result = await this.organizationMemberRepository.delete({

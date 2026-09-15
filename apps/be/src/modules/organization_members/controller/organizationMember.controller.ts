@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Post,
   Req,
@@ -34,6 +36,7 @@ export class OrganizationMemberController {
     return this.organizationMemberService.findAllMembers(id);
   }
 
+  @HttpCode(HttpStatus.OK)
   @Delete('organizations/:id/members/:userId')
   deletOrganizationMember(
     @Param('id') id: string,

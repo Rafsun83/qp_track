@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Organizations } from '../../organizations/entity/organization.entity.js';
 import { User } from '../../users/entity/user.entity.js';
+import { OrganizationRole } from '../enum/organization-role.enum.js';
 
 @Entity('organization_members')
 export class OrganizationMember {
@@ -30,6 +31,13 @@ export class OrganizationMember {
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
+
+  @Column({
+    type: 'enum',
+    enum: OrganizationRole,
+    default: OrganizationRole.MEMBER,
+  })
+  role: OrganizationRole;
 
   @CreateDateColumn({ name: 'joined_at', type: 'timestamptz' })
   joinedAt: Date;

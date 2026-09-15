@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { OrganizationMember } from '../../organization_members/entity/organization_member.entity.js';
+import { OrganizationRole } from '../../organization_members/enum/organization-role.enum.js';
 import { OrganizationMemberService } from '../../organization_members/service/organization_member.service.js';
 import { CreateOrganizationDto } from '../dto/create-organization.dto.js';
 import { Organizations } from '../entity/organization.entity.js';
@@ -29,6 +30,7 @@ export class OrganizationService {
       await manager.save(OrganizationMember, {
         organizationId: savedOrganization.id,
         userId: ownerId,
+        role: OrganizationRole.OWNER,
       });
 
       // await this.organizationMemberService.createOrganizationMember({
