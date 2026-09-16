@@ -5,8 +5,10 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { OrganizationMember } from '../../organization_members/entity/organization_member.entity.js';
 
 const SALT_ROUNDS = 10;
 
@@ -23,6 +25,12 @@ export class User {
 
   @Column()
   email: string;
+
+  @OneToMany(
+    'OrganizationMember',
+    (member: OrganizationMember) => member.user,
+  )
+  memberships: OrganizationMember[];
 
   @Column()
   location: string;
