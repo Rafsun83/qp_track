@@ -17,6 +17,22 @@ Authorization: Bearer <access_token>
 - Missing header, malformed header (not `Bearer <token>`), or an invalid/expired token → `401 Unauthorized`.
 - The token expires (`expiresIn` configured in `app.module.ts`, currently `1h`) — log in again to get a new one once it expires.
 
+### Role-based authorization (organization endpoints)
+
+Some organization-scoped endpoints additionally require a **role**, enforced by a second global guard, `RolesGuard` (`apps/be/src/modules/auth/guard/roles.guard.ts`), applied via the `@Roles(...)` decorator (`apps/be/src/modules/auth/decorator/roles.decorator.ts`).
+
+Important: a role is **not** part of the JWT. It's a property of the caller's `organization_members` row for the specific organization in the URL, so `RolesGuard` resolves it fresh on every request:
+1. It reads the organization id from the route's `:id` param.
+2. It reads the caller's user id from the JWT (`request.user.sub`).
+3. It looks up that `(organizationId, userId)` pair in `organization_members` to get the caller's actual role (`OWNER` / `ADMIN` / `MEMBER`) for *that* organization.
+4. It checks that role against whatever `@Roles(...)` lists on the route.
+
+Consequences:
+- If a route has **no** `@Roles(...)` decorator, `RolesGuard` is a no-op — a valid JWT is the only requirement, even though the route is nested under `/organizations/:id`. It does **not** independently verify the caller is even a member of that organization.
+- If a route **does** have `@Roles(...)`, the caller must (a) be a member of that organization and (b) hold one of the listed roles, or the request fails with `403 Forbidden`.
+
+Each endpoint below states whether it currently carries a `@Roles(...)` requirement.
+
 ---
 
 ## `POST /auth/login`
@@ -272,6 +288,215 @@ curl http://localhost:3001/api/users/df7db73d-f047-44d5-9d51-62ec043bfe0e \
 
 ---
 
+## `POST /api/organizations`
+
+**Requires auth.** No `@Roles(...)` — any authenticated user may create an organization. Creates the organization and, in the same transaction, adds the caller as its first member with role `OWNER`.
+
+**Body (`CreateOrganizationDto`):**
+
+| Field  | Type   | Rules                     |
+|--------|--------|---------------------------|
+| `name` | string | required, non-empty       |
+
+**Success — `201 Created`:** the created organization, with `members` (and each member's `user`) loaded — `owner` is **not** loaded on this response:
+
+```json
+{
+  "id": "b1a2c3d4-...",
+  "name": "Acme Inc",
+  "ownerId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "isActive": true,
+  "createdAt": "2026-09-16T02:07:28.920Z",
+  "updatedAt": "2026-09-16T02:07:28.920Z",
+  "members": [
+    {
+      "id": "3f9a2b10-...",
+      "organizationId": "b1a2c3d4-...",
+      "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+      "role": "OWNER",
+      "joinedAt": "2026-09-16T02:07:28.920Z",
+      "user": {
+        "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+        "name": "Jane Doe",
+        "loginCount": 3,
+        "email": "jane@example.com",
+        "location": "Dhaka",
+        "userName": "janedoe",
+        "createdAt": "2026-09-10T02:07:28.920Z"
+      }
+    }
+  ]
+}
+```
+
+**Failure:**
+- `400 Bad Request` — missing/empty `name`, or an unknown field (rejected by the global `whitelist`/`forbidNonWhitelisted` validation pipe).
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3001/api/organizations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"name": "Acme Inc"}'
+```
+
+---
+
+## `GET /api/organizations`
+
+**Requires auth.** No `@Roles(...)`. Lists organizations, but **only ones the caller owns** (`WHERE ownerId = <caller's id>`) — organizations where the caller is merely a `MEMBER` or `ADMIN` (not the `OWNER`) are **not** returned by this endpoint.
+
+**Success — `200 OK`:** an array of organizations, each with `members` (and each member's `user`) and `owner` loaded, e.g.:
+
+```json
+[
+  {
+    "id": "b1a2c3d4-...",
+    "name": "Acme Inc",
+    "ownerId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "isActive": true,
+    "createdAt": "2026-09-16T02:07:28.920Z",
+    "updatedAt": "2026-09-16T02:07:28.920Z",
+    "owner": { "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e", "name": "Jane Doe", "...": "..." },
+    "members": [ { "id": "3f9a2b10-...", "role": "OWNER", "user": { "...": "..." } } ]
+  }
+]
+```
+
+An empty array `[]` (not an error) if the caller doesn't own any organization.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/organizations \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## `GET /api/organizations/:id`
+
+**Requires auth (JWT) only.** No `@Roles(...)` and no membership check of any kind — any authenticated user can fetch **any** organization by id, whether or not they belong to it, and the response includes its full member list.
+
+**Success — `200 OK`:** the organization with `members` (and each member's `user`) loaded, or `null` if no organization has that id (same no-404-on-missing-id pattern as `GET /api/users/:id`).
+
+**Failure — `401 Unauthorized`:** missing/invalid/expired bearer token.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/organizations/b1a2c3d4-... \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## `POST /api/organizations/:id/members`
+
+**Requires auth.** `@Roles(...)` is currently **commented out** on this route in source — so, as it stands, any authenticated user can add a member to **any** organization, even one they don't belong to. There is also no server-side check that `role` is one of `OWNER`/`ADMIN`/`MEMBER` (the DTO only validates it's a non-empty string), so an invalid role value will pass validation and only fail later at the database layer.
+
+**Body (`OrganizationMemberCreateDto`):**
+
+| Field    | Type   | Rules                                      |
+|----------|--------|---------------------------------------------|
+| `userId` | string | required, non-empty                          |
+| `role`   | string | required, non-empty — should be one of `OWNER` / `ADMIN` / `MEMBER`, but this isn't enforced by validation |
+
+**Success — `201 Created`:** the created membership row (no nested `user`/`organization` object):
+
+```json
+{
+  "organizationId": "b1a2c3d4-...",
+  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "role": "MEMBER",
+  "id": "3f9a2b10-...",
+  "joinedAt": "2026-09-16T02:07:28.920Z"
+}
+```
+
+**Failure:**
+- `400 Bad Request` — missing/empty `userId` or `role`, or an unknown field.
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `409 Conflict` — that user is already a member of this organization.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3001/api/organizations/b1a2c3d4-.../members \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e", "role": "MEMBER"}'
+```
+
+---
+
+## `GET /api/organizations/:id/members`
+
+**Requires auth (JWT) only.** No `@Roles(...)` and no membership check — any authenticated user can list any organization's members.
+
+**Success — `200 OK`:** an array of membership rows with `user` loaded:
+
+```json
+[
+  {
+    "id": "3f9a2b10-...",
+    "organizationId": "b1a2c3d4-...",
+    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "role": "OWNER",
+    "joinedAt": "2026-09-16T02:07:28.920Z",
+    "user": {
+      "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+      "name": "Jane Doe",
+      "loginCount": 3,
+      "email": "jane@example.com",
+      "location": "Dhaka",
+      "userName": "janedoe",
+      "createdAt": "2026-09-10T02:07:28.920Z"
+    }
+  }
+]
+```
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/organizations/b1a2c3d4-.../members \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## `DELETE /api/organizations/:id/members/:userId`
+
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER)` — only a caller whose own membership role in organization `:id` is `OWNER` can call this at all; anyone else (including `ADMIN`) is rejected with `403 Forbidden` by `RolesGuard` before the handler runs. The handler then re-checks the same thing (`actorMembership.role !== OWNER` → `403 Forbidden, "Only Owner can delete"`), so the role requirement is currently enforced twice.
+
+No body. `userId` in the path is the member being removed — an `OWNER` can remove any member, including themselves or another `OWNER`; there's no separate protection against removing the last remaining owner.
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of the organization, or is a member but not an `OWNER`.
+- `404 Not Found` — no member with that `userId` exists in this organization.
+
+**Success — `200 OK`:** a TypeORM delete result, not the deleted entity:
+
+```json
+{
+  "raw": [],
+  "affected": 1
+}
+```
+
+**Example:**
+
+```bash
+curl -X DELETE http://localhost:3001/api/organizations/b1a2c3d4-.../members/df7db73d-f047-44d5-9d51-62ec043bfe0e \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 ## `POST /webhook/response`
 
 **API key only** — same auth model as `GET /api/users/:id`: excluded from the global `AuthGuard`, protected instead by `ApiKeyGuard` via an `x-api-key` header (get one from `POST /api-key`). No JWT accepted.
@@ -380,5 +605,6 @@ An empty array `[]` (not an error) if nothing matches.
 |--------|------|---------------|
 | `400`  | Validation failed, or an unknown/extra field was sent | `{"message": ["loginCount must be an integer number"], "error": "Bad Request", "statusCode": 400}` |
 | `401`  | No token, bad token format, expired/invalid token, or wrong login credentials | `{"message": "Unauthorized", "statusCode": 401}` |
-| `409`  | Duplicate `userName` on registration | `{"message": "userName is already taken", "statusCode": 409}` |
+| `403`  | Valid token, but caller lacks the required organization role (see [Role-based authorization](#role-based-authorization-organization-endpoints)), or isn't a member of the organization at all | `{"message": "Only Owner can delete", "error": "Forbidden", "statusCode": 403}` |
+| `409`  | Duplicate `userName` on registration, or user already a member of an organization | `{"message": "userName is already taken", "statusCode": 409}` |
 | `500`  | Unexpected server error | `{"statusCode": 500, "message": "Internal server error"}` |

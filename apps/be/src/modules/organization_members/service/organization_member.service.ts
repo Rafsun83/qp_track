@@ -19,16 +19,8 @@ export class OrganizationMemberService {
 
   async createOrganizationMember(
     organizationId: string,
-    actorId: string,
     { userId, role }: OrganizationMemberCreateDto,
   ) {
-    const isActorMember = await this.organizationMemberRepository.findOne({
-      where: { organizationId, userId: actorId },
-    });
-    if (!isActorMember) {
-      throw new ForbiddenException('You are not a member of this organization');
-    }
-
     const alreadyMember = await this.organizationMemberRepository.findOne({
       where: { organizationId, userId },
     });
@@ -45,6 +37,12 @@ export class OrganizationMemberService {
     });
   }
 
+  async findMembership(organizationId: string, userId: string) {
+    return this.organizationMemberRepository.findOne({
+      where: { organizationId, userId },
+    });
+  }
+
   async findAllMembers(organizationId: string) {
     return this.organizationMemberRepository.find({
       where: { organizationId },
@@ -52,16 +50,13 @@ export class OrganizationMemberService {
     });
   }
 
-  async deleteMember(organizationId: string, actorId: string, userId: string) {
-    const isActorMember = await this.organizationMemberRepository.findOne({
-      where: { organizationId, userId: actorId },
-    });
-    if (!isActorMember) {
-      throw new ForbiddenException('You are not a member of this organization');
-    }
-
-    if (isActorMember.role === OrganizationRole.OWNER) {
-      throw new ForbiddenException('Owner will not delete');
+  async deleteMember(
+    organizationId: string,
+    actorMembership: OrganizationMember,
+    userId: string,
+  ) {
+    if (actorMembership.role !== OrganizationRole.OWNER) {
+      throw new ForbiddenException('Only Owner can delete');
     }
 
     const result = await this.organizationMemberRepository.delete({
