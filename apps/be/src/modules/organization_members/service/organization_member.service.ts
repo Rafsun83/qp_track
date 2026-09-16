@@ -8,7 +8,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OrganizationMemberCreateDto } from '../dto/organization-member-create-dto.js';
 import { OrganizationMember } from '../entity/organization_member.entity.js';
-import { OrganizationRole } from '../enum/organization-role.enum.js';
 
 @Injectable()
 export class OrganizationMemberService {
@@ -55,8 +54,8 @@ export class OrganizationMemberService {
     actorMembership: OrganizationMember,
     userId: string,
   ) {
-    if (actorMembership.role !== OrganizationRole.OWNER) {
-      throw new ForbiddenException('Only Owner can delete');
+    if (actorMembership.userId === userId) {
+      throw new ForbiddenException('Owner can not delete himself');
     }
 
     const result = await this.organizationMemberRepository.delete({

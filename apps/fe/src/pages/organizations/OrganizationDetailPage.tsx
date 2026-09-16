@@ -40,7 +40,11 @@ export function OrganizationDetailPage() {
     setLoadError(null);
     getOrganizationById(token, id)
       .then(setOrganization)
-      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load organization."))
+      .catch((err) =>
+        setLoadError(
+          err instanceof Error ? err.message : "Failed to load organization.",
+        ),
+      )
       .finally(() => setLoading(false));
   }, [token, id]);
 
@@ -72,7 +76,9 @@ export function OrganizationDetailPage() {
     };
   }, [token, userQuery, selectedUser]);
 
-  const currentMembership = organization?.members?.find((member) => member.userId === userId);
+  const currentMembership = organization?.members?.find(
+    (member) => member.userId === userId,
+  );
   const isOwner = currentMembership?.role === "OWNER";
 
   async function handleAddMember(event: FormEvent) {
@@ -89,7 +95,9 @@ export function OrganizationDetailPage() {
       setRole("MEMBER");
       loadOrganization();
     } catch (err) {
-      setAddError(err instanceof ApiError ? err.message : "Failed to add member.");
+      setAddError(
+        err instanceof ApiError ? err.message : "Failed to add member.",
+      );
     } finally {
       setAdding(false);
     }
@@ -104,15 +112,19 @@ export function OrganizationDetailPage() {
       await removeOrganizationMember(token, id, memberUserId);
       loadOrganization();
     } catch (err) {
-      setRemoveError(err instanceof ApiError ? err.message : "Failed to remove member.");
+      setRemoveError(
+        err instanceof ApiError ? err.message : "Failed to remove member.",
+      );
     } finally {
       setRemovingUserId(null);
     }
   }
 
-  if (loading) return <p className="org-detail__status">Loading organization...</p>;
+  if (loading)
+    return <p className="org-detail__status">Loading organization...</p>;
   if (loadError) return <Alert variant="error">{loadError}</Alert>;
-  if (!organization) return <p className="org-detail__status">Organization not found.</p>;
+  if (!organization)
+    return <p className="org-detail__status">Organization not found.</p>;
 
   return (
     <div className="org-detail">
@@ -166,7 +178,9 @@ export function OrganizationDetailPage() {
               <select
                 id="member-role"
                 value={role}
-                onChange={(event) => setRole(event.target.value as OrganizationRole)}
+                onChange={(event) =>
+                  setRole(event.target.value as OrganizationRole)
+                }
               >
                 {ASSIGNABLE_ROLES.map((assignableRole) => (
                   <option key={assignableRole} value={assignableRole}>
@@ -192,10 +206,12 @@ export function OrganizationDetailPage() {
           {organization.members?.map((member) => (
             <li key={member.id} className="org-member-list__item">
               <div>
-                <div className="org-member-list__name">{member.user?.name ?? member.userId}</div>
+                <div className="org-member-list__name">
+                  {member.user?.name ?? member.userId}
+                </div>
                 <div className="org-member-list__role">{member.role}</div>
               </div>
-              {isOwner && (
+              {member.role !== "OWNER" ? (
                 <button
                   type="button"
                   className="org-member-list__remove"
@@ -204,7 +220,10 @@ export function OrganizationDetailPage() {
                 >
                   {removingUserId === member.userId ? "Removing..." : "Remove"}
                 </button>
-              )}
+              ) : null}
+              {/* {isOwner && (
+                
+              )} */}
             </li>
           ))}
         </ul>

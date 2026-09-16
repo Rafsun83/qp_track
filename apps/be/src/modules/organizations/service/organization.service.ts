@@ -3,7 +3,6 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { OrganizationMember } from '../../organization_members/entity/organization_member.entity.js';
 import { OrganizationRole } from '../../organization_members/enum/organization-role.enum.js';
-import { OrganizationMemberService } from '../../organization_members/service/organization_member.service.js';
 import { CreateOrganizationDto } from '../dto/create-organization.dto.js';
 import { Organizations } from '../entity/organization.entity.js';
 
@@ -14,7 +13,6 @@ export class OrganizationService {
     private readonly organizationRepository: Repository<Organizations>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
-    private readonly organizationMemberService: OrganizationMemberService,
   ) {}
 
   async createOrganization(
@@ -47,8 +45,18 @@ export class OrganizationService {
 
   async findAll(userId: string) {
     return this.organizationRepository.find({
-      where: { ownerId: userId },
-      relations: { members: { user: true }, owner: {} },
+      where: {
+        // ownerId: userId,
+        members: {
+          userId,
+        },
+      },
+      relations: {
+        members: {},
+        // members: {
+        //   user: true,
+        // },
+      },
     });
   }
 
