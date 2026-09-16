@@ -4,6 +4,8 @@ import { AppLayout } from "./components/layout/AppLayout";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { RegisterPage } from "./pages/auth/RegisterPage";
 import { DashboardPage } from "./pages/dashboard/DashboardPage";
+import { OrganizationDetailPage } from "./pages/organizations/OrganizationDetailPage";
+import { OrganizationsPage } from "./pages/organizations/OrganizationsPage";
 import { ProfilePage } from "./pages/profile/ProfilePage";
 
 function App() {
@@ -16,12 +18,17 @@ function App() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route path="/profile" element={<ProfilePage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/organizations" element={<OrganizationsPage />} />
+          <Route
+            path="/organizations/:id"
+            element={<OrganizationDetailPage />}
+          />
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/profile" replace />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 }

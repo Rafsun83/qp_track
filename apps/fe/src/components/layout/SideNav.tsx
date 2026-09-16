@@ -4,6 +4,7 @@ import "./SideNav.css";
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/profile", label: "Profile" },
+  { to: "/organizations", label: "Organizations" },
 ];
 
 export function SideNav() {

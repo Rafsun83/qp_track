@@ -30,7 +30,7 @@ export function LoginPage() {
     try {
       const { access_token } = await loginRequest({ username, password });
       login(access_token);
-      navigate("/profile", { replace: true });
+      navigate("/dashboard", { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.status === 401 ? "Incorrect username or password." : err.message);

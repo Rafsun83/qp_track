@@ -1,0 +1,100 @@
+.organizations-page__title {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.organizations-page__subtitle {
+  margin: 0 0 20px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.organizations-page__status {
+  padding: 20px 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.org-create-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  max-width: 480px;
+}
+
+.org-create-form input {
+  flex: 1;
+  font: inherit;
+  font-size: 15px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.org-create-form input:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -1px;
+}
+
+.org-create-form button {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.org-create-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.org-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 480px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.org-list__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.org-list__item:last-child {
+  border-bottom: none;
+}
+
+.org-list__name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.org-list__name:hover {
+  text-decoration: underline;
+}
+
+.org-list__meta {
+  font-size: 12px;
+  color: var(--text);
+}
