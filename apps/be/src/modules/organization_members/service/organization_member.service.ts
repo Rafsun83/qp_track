@@ -55,7 +55,7 @@ export class OrganizationMemberService {
     userId: string,
   ) {
     if (actorMembership.userId === userId) {
-      throw new ForbiddenException('Owner can not delete himself');
+      throw new ForbiddenException('You can not delete yourself');
     }
 
     const result = await this.organizationMemberRepository.delete({
@@ -66,5 +66,17 @@ export class OrganizationMemberService {
       throw new NotFoundException('Member not found in this organization');
     }
     return result;
+  }
+
+  async leaveMemberFromOrganization(organizationId: string, userId: string) {
+    const leave = await this.organizationMemberRepository.delete({
+      organizationId,
+      userId,
+    });
+
+    if (!leave.affected) {
+      throw new NotFoundException('Member not found in this organization');
+    }
+    return leave;
   }
 }

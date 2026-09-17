@@ -497,6 +497,37 @@ curl -X DELETE http://localhost:3001/api/organizations/b1a2c3d4-.../members/df7d
 
 ---
 
+## `DELETE /api/organizations/:id/members/:userId/leave`
+
+**Requires auth + role.** `@Roles(OrganizationRole.ADMIN, OrganizationRole.MEMBER)` — the caller's own membership role in organization `:id` must be `ADMIN` or `MEMBER`; an `OWNER` calling this route is rejected with `403 Forbidden` by `RolesGuard` (there's currently no "leave as owner" or ownership-transfer flow).
+
+> ⚠️ Despite the name, this does **not** check that `:userId` is the caller's own id — `RolesGuard` only checks the caller's *own* role, and the handler (`leaveMemberFromOrganization`) deletes by `(organizationId, userId)` with no comparison against the caller at all. So in practice any `ADMIN` or `MEMBER` can remove **any** other member from the organization through this route, not just themselves.
+
+No body.
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of the organization, or is a member but holds the `OWNER` role.
+- `404 Not Found` — no member with that `userId` exists in this organization.
+
+**Success — `200 OK`:** a TypeORM delete result, not the deleted entity:
+
+```json
+{
+  "raw": [],
+  "affected": 1
+}
+```
+
+**Example:**
+
+```bash
+curl -X DELETE http://localhost:3001/api/organizations/b1a2c3d4-.../members/df7db73d-f047-44d5-9d51-62ec043bfe0e/leave \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 ## `POST /webhook/response`
 
 **API key only** — same auth model as `GET /api/users/:id`: excluded from the global `AuthGuard`, protected instead by `ApiKeyGuard` via an `x-api-key` header (get one from `POST /api-key`). No JWT accepted.

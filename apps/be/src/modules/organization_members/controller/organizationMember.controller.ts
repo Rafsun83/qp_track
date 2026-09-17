@@ -36,7 +36,7 @@ export class OrganizationMemberController {
     return this.organizationMemberService.findAllMembers(id);
   }
 
-  @Roles(OrganizationRole.OWNER)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   // @HttpCode(HttpStatus.OK)
   @Delete('organizations/:id/members/:userId')
   deletOrganizationMember(
@@ -47,6 +47,18 @@ export class OrganizationMemberController {
     return this.organizationMemberService.deleteMember(
       id,
       req.organizationMember,
+      userId,
+    );
+  }
+
+  @Roles(OrganizationRole.ADMIN, OrganizationRole.MEMBER)
+  @Delete('organizations/:id/members/:userId/leave')
+  leaveFromOrganization(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.organizationMemberService.leaveMemberFromOrganization(
+      id,
       userId,
     );
   }

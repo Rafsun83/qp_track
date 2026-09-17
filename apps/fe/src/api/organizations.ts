@@ -49,3 +49,15 @@ export function removeOrganizationMember(
     token,
   });
 }
+
+/** DELETE /api/organizations/:id/members/:userId/leave - requires auth + ADMIN/MEMBER role in that org. */
+export function leaveOrganizationMember(
+  token: string,
+  organizationId: string,
+  userId: string,
+): Promise<unknown> {
+  return apiRequest(`/api/organizations/${organizationId}/members/${userId}/leave`, {
+    method: "DELETE",
+    token,
+  });
+}

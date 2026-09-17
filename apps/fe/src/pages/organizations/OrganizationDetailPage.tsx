@@ -4,12 +4,17 @@ import { ApiError } from "../../api/client";
 import {
   addOrganizationMember,
   getOrganizationById,
+  leaveOrganizationMember,
   removeOrganizationMember,
 } from "../../api/organizations";
 import { searchUsersByUserName } from "../../api/users";
 import { useAuth } from "../../auth/AuthContext";
 import { Alert } from "../../components/ui/Alert";
-import type { Organization, OrganizationRole } from "../../types/organization";
+import type {
+  Organization,
+  OrganizationMember,
+  OrganizationRole,
+} from "../../types/organization";
 import type { User } from "../../types/user";
 import "./OrganizationDetailPage.css";
 
@@ -80,6 +85,7 @@ export function OrganizationDetailPage() {
     (member) => member.userId === userId,
   );
   const isOwner = currentMembership?.role === "OWNER";
+  const isAdmin = currentMembership?.role === "ADMIN";
 
   async function handleAddMember(event: FormEvent) {
     event.preventDefault();
@@ -103,13 +109,19 @@ export function OrganizationDetailPage() {
     }
   }
 
-  async function handleRemoveMember(memberUserId: string) {
+  // Only an OWNER may call the plain delete route; everyone else who's
+  // allowed to remove/leave goes through the leave route instead.
+  async function handleMemberAction(memberUserId: string, useDeleteApi: boolean) {
     if (!token || !id) return;
 
     setRemoveError(null);
     setRemovingUserId(memberUserId);
     try {
-      await removeOrganizationMember(token, id, memberUserId);
+      if (useDeleteApi) {
+        await removeOrganizationMember(token, id, memberUserId);
+      } else {
+        await leaveOrganizationMember(token, id, memberUserId);
+      }
       loadOrganization();
     } catch (err) {
       setRemoveError(
@@ -118,6 +130,27 @@ export function OrganizationDetailPage() {
     } finally {
       setRemovingUserId(null);
     }
+  }
+
+  function getMemberAction(
+    member: OrganizationMember,
+  ): { label: string; useDeleteApi: boolean } | null {
+    const isSelf = member.userId === userId;
+
+    if (isOwner) {
+      // Owner can remove anyone but himself (backend rejects self-delete on this route).
+      return isSelf ? null : { label: "Remove", useDeleteApi: true };
+    }
+
+    if (isAdmin) {
+      if (member.role === "OWNER") return null;
+      return isSelf
+        ? { label: "Leave", useDeleteApi: false }
+        : { label: "Remove", useDeleteApi: false };
+    }
+
+    // Plain member: can only leave, not touch anyone else.
+    return isSelf ? { label: "Leave", useDeleteApi: false } : null;
   }
 
   if (loading)
@@ -203,29 +236,36 @@ export function OrganizationDetailPage() {
         <h2 className="org-detail__members-title">Members</h2>
         {removeError && <Alert variant="error">{removeError}</Alert>}
         <ul className="org-member-list">
-          {organization.members?.map((member) => (
-            <li key={member.id} className="org-member-list__item">
-              <div>
-                <div className="org-member-list__name">
-                  {member.user?.name ?? member.userId}
+          {organization.members?.map((member) => {
+            const action = getMemberAction(member);
+            const isBusy = removingUserId === member.userId;
+            return (
+              <li key={member.id} className="org-member-list__item">
+                <div>
+                  <div className="org-member-list__name">
+                    {member.user?.name ?? member.userId}
+                  </div>
+                  <div className="org-member-list__role">{member.role}</div>
                 </div>
-                <div className="org-member-list__role">{member.role}</div>
-              </div>
-              {member.role !== "OWNER" ? (
-                <button
-                  type="button"
-                  className="org-member-list__remove"
-                  disabled={removingUserId === member.userId}
-                  onClick={() => handleRemoveMember(member.userId)}
-                >
-                  {removingUserId === member.userId ? "Removing..." : "Remove"}
-                </button>
-              ) : null}
-              {/* {isOwner && (
-                
-              )} */}
-            </li>
-          ))}
+                {action && (
+                  <button
+                    type="button"
+                    className="org-member-list__remove"
+                    disabled={isBusy}
+                    onClick={() =>
+                      handleMemberAction(member.userId, action.useDeleteApi)
+                    }
+                  >
+                    {isBusy
+                      ? action.label === "Leave"
+                        ? "Leaving..."
+                        : "Removing..."
+                      : action.label}
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </aside>
     </div>

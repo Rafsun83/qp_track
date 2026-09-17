@@ -48,14 +48,13 @@ export class OrganizationService {
       where: {
         // ownerId: userId,
         members: {
-          userId,
+          user: {
+            id: userId,
+          },
         },
       },
       relations: {
         members: {},
-        // members: {
-        //   user: true,
-        // },
       },
     });
   }
