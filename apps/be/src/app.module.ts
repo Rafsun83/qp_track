@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ApiKeyModule } from './modules/apiKey/api-key.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { jwtConstants } from './modules/auth/constant/constants.js';
+import { HealthModule } from './modules/health/health.module.js';
 import { OrganizationMembersModule } from './modules/organization_members/organization_member.module.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
 import { SurveyResponseModule } from './modules/survey_response/survey_response.module.js';
@@ -41,6 +42,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       secret: jwtConstants.secret,
       signOptions: { expiresIn: '1h' },
     }),
+    HealthModule,
     UserModules,
     SurveyResponseModule,
     OrganizationsModule,
