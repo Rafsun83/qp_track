@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OrganizationMemberCreateDto } from '../dto/organization-member-create-dto.js';
 import { OrganizationMember } from '../entity/organization_member.entity.js';
+import { OrganizationRole } from '../enum/organization-role.enum.js';
 
 @Injectable()
 export class OrganizationMemberService {
@@ -54,26 +55,49 @@ export class OrganizationMemberService {
     actorMembership: OrganizationMember,
     userId: string,
   ) {
+    const alreadyMember = await this.organizationMemberRepository.findOne({
+      where: { organizationId, userId },
+    });
+
     if (actorMembership.userId === userId) {
       throw new ForbiddenException('You can not delete yourself');
+    }
+
+    if (
+      actorMembership.role === OrganizationRole.ADMIN &&
+      userId === alreadyMember?.organization.ownerId
+    ) {
+      throw new ForbiddenException("You can't remove owner as admin");
     }
 
     const result = await this.organizationMemberRepository.delete({
       organizationId,
       userId,
     });
+
     if (!result.affected) {
       throw new NotFoundException('Member not found in this organization');
     }
     return result;
   }
 
-  async leaveMemberFromOrganization(organizationId: string, userId: string) {
+  async leaveMemberFromOrganization(
+    organizationId: string,
+    userId: string,
+    actorMembership: OrganizationMember,
+  ) {
+    if (
+      actorMembership.userId !== userId &&
+      actorMembership.role === OrganizationRole.MEMBER
+    ) {
+      throw new ForbiddenException(
+        "You can't happening this action as member.",
+      );
+    }
     const leave = await this.organizationMemberRepository.delete({
       organizationId,
       userId,
     });
-
     if (!leave.affected) {
       throw new NotFoundException('Member not found in this organization');
     }

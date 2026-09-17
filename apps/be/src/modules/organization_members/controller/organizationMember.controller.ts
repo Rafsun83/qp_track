@@ -37,7 +37,6 @@ export class OrganizationMemberController {
   }
 
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  // @HttpCode(HttpStatus.OK)
   @Delete('organizations/:id/members/:userId')
   deletOrganizationMember(
     @Param('id') id: string,
@@ -56,10 +55,12 @@ export class OrganizationMemberController {
   leaveFromOrganization(
     @Param('id') id: string,
     @Param('userId') userId: string,
+    @Req() req: Request & { organizationMember: OrganizationMember },
   ) {
     return this.organizationMemberService.leaveMemberFromOrganization(
       id,
       userId,
+      req.organizationMember,
     );
   }
 }
