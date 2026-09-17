@@ -1,3 +1,5 @@
+import type { OrganizationMember } from "./organization";
+
 export interface User {
   id: string;
   name: string;
@@ -6,4 +8,5 @@ export interface User {
   location: string;
   userName: string;
   createdAt: string;
+  memberships?: OrganizationMember[];
 }

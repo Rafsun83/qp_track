@@ -9,6 +9,7 @@ export interface OrganizationMember {
   role: OrganizationRole;
   joinedAt: string;
   user?: User;
+  organization?: Organization;
 }
 
 export interface Organization {

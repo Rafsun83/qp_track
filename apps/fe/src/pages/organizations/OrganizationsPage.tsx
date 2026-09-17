@@ -1,14 +1,15 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError } from "../../api/client";
-import { createOrganization, getMyOrganizations } from "../../api/organizations";
+import { createOrganization } from "../../api/organizations";
+import { getUserById } from "../../api/users";
 import { useAuth } from "../../auth/AuthContext";
 import { Alert } from "../../components/ui/Alert";
 import type { Organization } from "../../types/organization";
 import "./OrganizationsPage.css";
 
 export function OrganizationsPage() {
-  const { token } = useAuth();
+  const { token, userId } = useAuth();
   const navigate = useNavigate();
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -20,15 +21,19 @@ export function OrganizationsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || !userId) return;
 
     let cancelled = false;
     setLoading(true);
     setLoadError(null);
 
-    getMyOrganizations(token)
-      .then((data) => {
-        if (!cancelled) setOrganizations(data);
+    getUserById(token, userId)
+      .then((user) => {
+        if (cancelled) return;
+        const memberOrganizations = (user.memberships ?? [])
+          .map((membership) => membership.organization)
+          .filter((organization): organization is Organization => organization != null);
+        setOrganizations(memberOrganizations);
       })
       .catch((err) => {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : "Failed to load organizations.");
@@ -40,7 +45,7 @@ export function OrganizationsPage() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, userId]);
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
@@ -61,7 +66,7 @@ export function OrganizationsPage() {
   return (
     <div>
       <h1 className="organizations-page__title">Organizations</h1>
-      <p className="organizations-page__subtitle">Organizations you own.</p>
+      <p className="organizations-page__subtitle">Organizations you belong to.</p>
 
       <form className="org-create-form" onSubmit={handleCreate}>
         <input
@@ -81,7 +86,7 @@ export function OrganizationsPage() {
       {!loading && loadError && <Alert variant="error">{loadError}</Alert>}
 
       {!loading && !loadError && organizations.length === 0 && (
-        <p className="organizations-page__status">You don't own any organizations yet.</p>
+        <p className="organizations-page__status">You don't belong to any organizations yet.</p>
       )}
 
       {!loading && !loadError && organizations.length > 0 && (
