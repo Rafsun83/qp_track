@@ -2,11 +2,14 @@ import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule, ObserveInstrument } from './app.module.js';
+import appConfig from './config/app.config.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     instrument: ObserveInstrument,
   });
+
+  const { port, corsOrigin } = app.get(appConfig.KEY);
 
   const config = new DocumentBuilder()
     .setTitle('Project Management API')
@@ -19,8 +22,7 @@ async function bootstrap() {
 
   app.enableCors({
     origin:
-      process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) ??
-      true,
+      corsOrigin?.split(',').map((origin: string) => origin.trim()) ?? true,
     credentials: true,
   });
 
@@ -34,6 +36,6 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document); // served at /docs
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(port);
 }
 await bootstrap();

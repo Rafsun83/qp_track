@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigType } from '@nestjs/config';
+import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { createObserveModule } from '@nestjs/observe';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import appConfig from './config/app.config.js';
+import databaseConfig from './config/database.config.js';
 import { ApiKeyModule } from './modules/apiKey/api-key.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
-import { jwtConstants } from './modules/auth/constant/constants.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { OrganizationMembersModule } from './modules/organization_members/organization_member.module.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
@@ -22,25 +23,33 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       appSecret: 'YOUR_APP_SECRET',
       serviceId: 'first_project',
     }),
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: `.env.${process.env.NODE_ENV ?? 'development'}`,
+      load: [appConfig, databaseConfig],
+    }),
     TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
+      inject: [databaseConfig.KEY],
+      useFactory: (dbConfig: ConfigType<typeof databaseConfig>) => ({
         type: 'postgres',
-        host: configService.get<string>('DB_HOST'),
-        port: configService.get<number>('DB_PORT'),
-        username: configService.get<string>('DB_USERNAME'),
-        password: configService.get<string>('DB_PASSWORD'),
-        database: configService.get<string>('DB_NAME'),
+        host: dbConfig.host,
+        port: dbConfig.port,
+        username: dbConfig.username,
+        password: dbConfig.password,
+        database: dbConfig.name,
         autoLoadEntities: true,
         synchronize: false,
       }),
     }),
-    JwtModule.register({
+    JwtModule.registerAsync({
       global: true,
-      secret: jwtConstants.secret,
-      signOptions: { expiresIn: '1h' },
+      inject: [appConfig.KEY],
+      useFactory: (config: ConfigType<typeof appConfig>) => ({
+        secret: config.jwtSecret,
+        signOptions: {
+          expiresIn: config.jwtExpiresIn as JwtSignOptions['expiresIn'],
+        },
+      }),
     }),
     HealthModule,
     UserModules,
