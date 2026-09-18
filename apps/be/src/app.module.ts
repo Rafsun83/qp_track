@@ -10,6 +10,8 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { OrganizationMembersModule } from './modules/organization_members/organization_member.module.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
+import { ProjectMemberModule } from './modules/project_members/projectMember.module.js';
+import { ProjectModule } from './modules/projects/project.module.js';
 import { SurveyResponseModule } from './modules/survey_response/survey_response.module.js';
 import { UserModules } from './modules/users/userModules.js';
 import { WebhookModules } from './modules/webhook/webhook.module.js';
@@ -56,6 +58,9 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     SurveyResponseModule,
     OrganizationsModule,
     OrganizationMembersModule,
+    ProjectModule,
+    ProjectMemberModule,
+
     WebhookModules,
     AuthModule,
     ApiKeyModule,
