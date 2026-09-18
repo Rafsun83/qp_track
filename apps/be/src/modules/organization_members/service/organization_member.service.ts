@@ -55,19 +55,8 @@ export class OrganizationMemberService {
     actorMembership: OrganizationMember,
     userId: string,
   ) {
-    const alreadyMember = await this.organizationMemberRepository.findOne({
-      where: { organizationId, userId },
-    });
-
     if (actorMembership.userId === userId) {
       throw new ForbiddenException('You can not delete yourself');
-    }
-
-    if (
-      actorMembership.role === OrganizationRole.ADMIN &&
-      userId === alreadyMember?.organization.ownerId
-    ) {
-      throw new ForbiddenException("You can't remove owner as admin");
     }
 
     const result = await this.organizationMemberRepository.delete({

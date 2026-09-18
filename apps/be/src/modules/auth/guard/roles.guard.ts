@@ -40,6 +40,11 @@ export class RolesGuard implements CanActivate {
     }
 
     request.organizationMember = membership;
-    return requiredRoles.includes(membership.role);
+    if (!requiredRoles.includes(membership.role)) {
+      throw new ForbiddenException(
+        'You do not have permission to perform this action',
+      );
+    }
+    return true;
   }
 }

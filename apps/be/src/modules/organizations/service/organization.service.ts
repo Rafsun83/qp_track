@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { OrganizationMember } from '../../organization_members/entity/organization_member.entity.js';
 import { OrganizationRole } from '../../organization_members/enum/organization-role.enum.js';
 import { CreateOrganizationDto } from '../dto/create-organization.dto.js';
+import { UpdateOrganizationDto } from '../dto/update-organization.dto.js';
 import { Organizations } from '../entity/organization.entity.js';
 
 @Injectable()
@@ -64,5 +65,16 @@ export class OrganizationService {
       where: { id },
       relations: { members: { user: true } },
     });
+  }
+
+  async update(id: string, data: UpdateOrganizationDto) {
+    const organization = await this.organizationRepository.preload({
+      id,
+      ...data,
+    });
+    if (!organization) {
+      throw new NotFoundException('Organization not found');
+    }
+    return this.organizationRepository.save(organization);
   }
 }
