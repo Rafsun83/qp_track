@@ -22,7 +22,7 @@ export class ProjectService {
   ) {
     return this.dataSource.transaction(async (manager) => {
       const savedProject = await manager.save(Project, {
-        projectInformation,
+        ...projectInformation,
         createdBy: userId,
         organizationId,
       });

@@ -1,6 +1,8 @@
 import { Body, Controller, Param, Post } from '@nestjs/common';
 import { CurrentUser } from '../../auth/decorator/current-user.decorator.js';
+import { Roles } from '../../auth/decorator/roles.decorator.js';
 import { CurrentUserDto } from '../../auth/dto/current-user.dto.js';
+import { OrganizationRole } from '../../organization_members/enum/organization-role.enum.js';
 import { craeteProjectDto } from '../dto/project-create.dto.js';
 import { ProjectService } from '../service/project.service.js';
 
@@ -8,7 +10,7 @@ import { ProjectService } from '../service/project.service.js';
 export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}
 
-  //   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
+  @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   @Post('organization/:organizationId/project')
   createProject(
     @Body() projectInformation: craeteProjectDto,
