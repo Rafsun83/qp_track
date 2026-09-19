@@ -34,8 +34,29 @@ export class ProjectService {
 
       return manager.findOneOrFail(Project, {
         where: { id: savedProject.id },
-        // relations: { members: { project: true } },
+        relations: { members: { project: true } },
       });
+    });
+  }
+
+  async getAllProjectsInOrganizations(organizationId: string) {
+    return this.projectRepository.find({
+      where: { organizationId: organizationId },
+      relations: {
+        members: {},
+      },
+    });
+  }
+
+  async getProjectByIdInOrganization(
+    organizationId: string,
+    projectId: string,
+  ) {
+    return this.projectRepository.findOne({
+      where: { organizationId, id: projectId },
+      relations: {
+        members: {},
+      },
     });
   }
 }

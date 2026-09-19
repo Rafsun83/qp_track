@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { CurrentUser } from '../../auth/decorator/current-user.decorator.js';
 import { Roles } from '../../auth/decorator/roles.decorator.js';
 import { CurrentUserDto } from '../../auth/dto/current-user.dto.js';
@@ -11,16 +11,37 @@ export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}
 
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  @Post('organization/:organizationId/project')
+  @Post('organization/:id/project')
   createProject(
     @Body() projectInformation: craeteProjectDto,
-    @Param('organizationId') organizationId: string,
+    @Param('id') organizationId: string,
     @CurrentUser() currentUser: CurrentUserDto,
   ) {
     return this.projectService.createProject(
       currentUser.sub,
       organizationId,
       projectInformation,
+    );
+  }
+
+  //   @Roles(
+  //     OrganizationRole.OWNER,
+  //     OrganizationRole.ADMIN,
+  //     OrganizationRole.MEMBER,
+  //   )
+  @Get('organization/:organizationId/project')
+  getAllProjectInOrganization(@Param('organizationId') organizationId: string) {
+    return this.projectService.getAllProjectsInOrganizations(organizationId);
+  }
+
+  @Get('organization/:organizationId/project/:id')
+  getProjectByIdOrganization(
+    @Param('organizationId') organizationId: string,
+    @Param('id') projectId: string,
+  ) {
+    return this.projectService.getProjectByIdInOrganization(
+      organizationId,
+      projectId,
     );
   }
 }
