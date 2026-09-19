@@ -22,14 +22,15 @@ Authorization: Bearer <access_token>
 Some organization-scoped endpoints additionally require a **role**, enforced by a second global guard, `RolesGuard` (`apps/be/src/modules/auth/guard/roles.guard.ts`), applied via the `@Roles(...)` decorator (`apps/be/src/modules/auth/decorator/roles.decorator.ts`).
 
 Important: a role is **not** part of the JWT. It's a property of the caller's `organization_members` row for the specific organization in the URL, so `RolesGuard` resolves it fresh on every request:
-1. It reads the organization id from the route's `:id` param.
+1. It reads the organization id from the route's **`:organizationId`** request param specifically (`request.params.organizationId`) — not just "whatever the first path param is". A route path whose organization segment is named anything else (e.g. `:id`) won't be picked up by this at all.
 2. It reads the caller's user id from the JWT (`request.user.sub`).
 3. It looks up that `(organizationId, userId)` pair in `organization_members` to get the caller's actual role (`OWNER` / `ADMIN` / `MEMBER`) for *that* organization.
 4. It checks that role against whatever `@Roles(...)` lists on the route.
 
 Consequences:
-- If a route has **no** `@Roles(...)` decorator, `RolesGuard` is a no-op — a valid JWT is the only requirement, even though the route is nested under `/organizations/:id`. It does **not** independently verify the caller is even a member of that organization.
+- If a route has **no** `@Roles(...)` decorator, `RolesGuard` is a no-op — a valid JWT is the only requirement, even though the route is nested under `/organizations/:organizationId`. It does **not** independently verify the caller is even a member of that organization.
 - If a route **does** have `@Roles(...)`, the caller must (a) be a member of that organization and (b) hold one of the listed roles, or the request fails with `403 Forbidden`.
+- A route that carries `@Roles(...)` but has **no** `:organizationId` param at all (see the project-member endpoints below, which key off `:projectId` instead) would read `request.params.organizationId` as `undefined`, fail the membership lookup, and always 403. None of the project-member routes currently use `@Roles(...)`, so this hasn't bitten anyone yet — just don't copy `@Roles(...)` onto one of those routes without also exposing an `:organizationId` param.
 
 Each endpoint below states whether it currently carries a `@Roles(...)` requirement.
 
@@ -393,9 +394,51 @@ curl http://localhost:3001/api/organizations/b1a2c3d4-... \
 
 ---
 
+## `PATCH /api/organizations/:id`
+
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)` — the caller must be a member of organization `:id` with role `OWNER` or `ADMIN`.
+
+**Body (`UpdateOrganizationDto`):**
+
+| Field  | Type   | Rules                |
+|--------|--------|-----------------------|
+| `name` | string | required, non-empty  |
+
+There's only one updatable field today (`name`) and it's required, not optional, so a `PATCH` here behaves like a full replace of that field rather than a true partial update.
+
+**Success — `200 OK`:** the updated organization row — note this is the bare entity from `preload()`/`save()`, **without** `members` or `owner` loaded (unlike the create/list/get-by-id responses above):
+
+```json
+{
+  "id": "b1a2c3d4-...",
+  "name": "Acme Incorporated",
+  "ownerId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "isActive": true,
+  "createdAt": "2026-09-16T02:07:28.920Z",
+  "updatedAt": "2026-09-19T10:00:00.000Z"
+}
+```
+
+**Failure:**
+- `400 Bad Request` — missing/empty `name`, or an unknown field.
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of the organization, or is a member but only `MEMBER` role.
+- `404 Not Found` — no organization with that id (`preload()` returns `undefined` for a missing id, which the service turns into `NotFoundException('Organization not found')`).
+
+**Example:**
+
+```bash
+curl -X PATCH http://localhost:3001/api/organizations/b1a2c3d4-... \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"name": "Acme Incorporated"}'
+```
+
+---
+
 ## `POST /api/organizations/:id/members`
 
-**Requires auth.** `@Roles(...)` is currently **commented out** on this route in source — so, as it stands, any authenticated user can add a member to **any** organization, even one they don't belong to. There is also no server-side check that `role` is one of `OWNER`/`ADMIN`/`MEMBER` (the DTO only validates it's a non-empty string), so an invalid role value will pass validation and only fail later at the database layer.
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)` — the caller must be a member of organization `:id` with role `OWNER` or `ADMIN` (this used to be commented out, allowing any authenticated user through; that's no longer the case). There is still no server-side check that `role` is one of `OWNER`/`ADMIN`/`MEMBER` (the DTO only validates it's a non-empty string), so an invalid role value will pass validation and only fail later at the database layer.
 
 **Body (`OrganizationMemberCreateDto`):**
 
@@ -419,6 +462,7 @@ curl http://localhost:3001/api/organizations/b1a2c3d4-... \
 **Failure:**
 - `400 Bad Request` — missing/empty `userId` or `role`, or an unknown field.
 - `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of the organization, or is a member but only holds `MEMBER` role.
 - `409 Conflict` — that user is already a member of this organization.
 
 **Example:**
@@ -470,13 +514,13 @@ curl http://localhost:3001/api/organizations/b1a2c3d4-.../members \
 
 ## `DELETE /api/organizations/:id/members/:userId`
 
-**Requires auth + role.** `@Roles(OrganizationRole.OWNER)` — only a caller whose own membership role in organization `:id` is `OWNER` can call this at all; anyone else (including `ADMIN`) is rejected with `403 Forbidden` by `RolesGuard` before the handler runs. The handler then re-checks the same thing (`actorMembership.role !== OWNER` → `403 Forbidden, "Only Owner can delete"`), so the role requirement is currently enforced twice.
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)` — a caller whose own membership role in organization `:id` is `OWNER` or `ADMIN` can call this; a plain `MEMBER` is rejected with `403 Forbidden` by `RolesGuard` before the handler runs (this used to be `OWNER`-only — `ADMIN` was added since).
 
-No body. `userId` in the path is the member being removed — an `OWNER` can remove any member, including themselves or another `OWNER`; there's no separate protection against removing the last remaining owner.
+No body. `userId` in the path is the member being removed. The handler now blocks **self-removal** instead: if `userId` equals the caller's own id, it throws `403 Forbidden, "You can not delete yourself"` regardless of role — including for an `OWNER` trying to remove themselves. There's still no separate protection against an `ADMIN` removing the sole remaining `OWNER` (any other user id is fair game), and no ownership-transfer flow.
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
-- `403 Forbidden` — caller is not a member of the organization, or is a member but not an `OWNER`.
+- `403 Forbidden` — caller is not a member of the organization, is only a `MEMBER`, or is targeting their own `userId`.
 - `404 Not Found` — no member with that `userId` exists in this organization.
 
 **Success — `200 OK`:** a TypeORM delete result, not the deleted entity:
@@ -501,13 +545,13 @@ curl -X DELETE http://localhost:3001/api/organizations/b1a2c3d4-.../members/df7d
 
 **Requires auth + role.** `@Roles(OrganizationRole.ADMIN, OrganizationRole.MEMBER)` — the caller's own membership role in organization `:id` must be `ADMIN` or `MEMBER`; an `OWNER` calling this route is rejected with `403 Forbidden` by `RolesGuard` (there's currently no "leave as owner" or ownership-transfer flow).
 
-> ⚠️ Despite the name, this does **not** check that `:userId` is the caller's own id — `RolesGuard` only checks the caller's *own* role, and the handler (`leaveMemberFromOrganization`) deletes by `(organizationId, userId)` with no comparison against the caller at all. So in practice any `ADMIN` or `MEMBER` can remove **any** other member from the organization through this route, not just themselves.
+> ⚠️ The handler (`leaveMemberFromOrganization`) now checks `:userId` against the caller for one of the two roles, but not both: if the caller's own role is `MEMBER` and `:userId` is **not** their own id, it throws `403 Forbidden, "You can't happening this action as member."` (typo included, verbatim from source) — so a plain `MEMBER` can only use this route on themselves. An `ADMIN` caller has no such check at all and can still remove **any** other member (including another `ADMIN`) through this route, not just themselves — that part of the original "leave" bug remains.
 
 No body.
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
-- `403 Forbidden` — caller is not a member of the organization, or is a member but holds the `OWNER` role.
+- `403 Forbidden` — caller is not a member of the organization, holds the `OWNER` role, or is a `MEMBER` targeting someone other than themselves.
 - `404 Not Found` — no member with that `userId` exists in this organization.
 
 **Success — `200 OK`:** a TypeORM delete result, not the deleted entity:
@@ -524,6 +568,289 @@ No body.
 ```bash
 curl -X DELETE http://localhost:3001/api/organizations/b1a2c3d4-.../members/df7db73d-f047-44d5-9d51-62ec043bfe0e/leave \
   -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Projects
+
+Note the route prefix here is singular **`organization`**, not `organizations` like the organization endpoints above — `/api/organization/:organizationId/project...`, not `/api/organizations/...`.
+
+### `POST /api/organization/:organizationId/project`
+
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)`. Creates the project and, in the same transaction, adds the caller as its first `project_members` row. No `role` is passed for that insert, so it takes the column default — `ProjectRole.LEAD` — regardless of the caller's organization role.
+
+**Body (`craeteProjectDto`** — the class name is a typo in source for "create", kept as-is here since it's what you'll see in stack traces/Swagger):
+
+| Field         | Type   | Rules                |
+|---------------|--------|-----------------------|
+| `name`        | string | required, non-empty  |
+| `description` | string | required, non-empty  |
+| `key`         | string | required, non-empty  |
+
+There's a DB-level `UNIQUE(organizationId, key)` constraint on `projects`, but the service doesn't catch a violation the way `UserService.create` catches a duplicate `userName` — a duplicate `key` within the same organization currently surfaces as an uncaught `QueryFailedError`, i.e. a raw **`500 Internal Server Error`**, not a clean `409 Conflict`.
+
+**Success — `201 Created`:** the created project with `members` loaded, and each member's own `project` also loaded one level deep (so you'll see the project's scalar fields duplicated inside `members[].project`):
+
+```json
+{
+  "id": "5c2b1f4a-...",
+  "organizationId": "b1a2c3d4-...",
+  "name": "Website Redesign",
+  "key": "WEB",
+  "description": "Revamp the marketing website",
+  "status": "PLANNING",
+  "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "createdAt": "2026-09-19T02:07:28.920Z",
+  "updatedAt": "2026-09-19T02:07:28.920Z",
+  "deletedAt": null,
+  "members": [
+    {
+      "id": "3f9a2b10-...",
+      "projectId": "5c2b1f4a-...",
+      "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+      "role": "LEAD",
+      "addedAt": "2026-09-19T02:07:28.920Z",
+      "project": { "id": "5c2b1f4a-...", "name": "Website Redesign", "...": "same project fields again" }
+    }
+  ]
+}
+```
+
+**Failure:**
+- `400 Bad Request` — missing/empty field, or an unknown field.
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of the organization, or is only a `MEMBER`.
+- `500 Internal Server Error` — duplicate `key` within the organization (see above).
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3001/api/organization/b1a2c3d4-.../project \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"name": "Website Redesign", "description": "Revamp the marketing website", "key": "WEB"}'
+```
+
+---
+
+### `GET /api/organization/:organizationId/project`
+
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER)` — **`OWNER` only**, notably stricter than every other project/organization list-type endpoint above (`ADMIN` cannot list an organization's projects through this route).
+
+**Success — `200 OK`:** an array of projects with `members` loaded (no nested `project` on each member this time — just the member rows):
+
+```json
+[
+  {
+    "id": "5c2b1f4a-...",
+    "organizationId": "b1a2c3d4-...",
+    "name": "Website Redesign",
+    "key": "WEB",
+    "description": "Revamp the marketing website",
+    "status": "PLANNING",
+    "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "createdAt": "2026-09-19T02:07:28.920Z",
+    "updatedAt": "2026-09-19T02:07:28.920Z",
+    "deletedAt": null,
+    "members": [ { "id": "3f9a2b10-...", "role": "LEAD", "userId": "df7db73d-..." } ]
+  }
+]
+```
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of the organization, or is a member but not the `OWNER`.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/organization/b1a2c3d4-.../project \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### `GET /api/organization/:organizationId/project/:id`
+
+**Requires auth (JWT) only.** No `@Roles(...)` and no membership check — any authenticated user can fetch any project by id/organization pair, same pattern as `GET /api/organizations/:id`.
+
+**Success — `200 OK`:** the project with `members` loaded, or `null` if no project matches that `(organizationId, id)` pair (no 404 on a missing id).
+
+**Failure — `401 Unauthorized`:** missing/invalid/expired bearer token.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/organization/b1a2c3d4-.../project/5c2b1f4a-... \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### `PATCH /api/organization/:organizationId/project/:id`
+
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)`.
+
+**Body (`UpdateProjectDto`, all fields optional):**
+
+| Field         | Type   | Rules                                          |
+|---------------|--------|--------------------------------------------------|
+| `name`        | string | optional                                          |
+| `description` | string | optional                                          |
+| `key`         | string | optional                                          |
+| `status`      | string | optional, must be one of `PLANNING` / `ACTIVE` / `ON_HOLD` / `COMPLETED` / `ARCHIVED` / `CANCELLED` |
+
+> ⚠️ The service builds the update via `projectRepository.preload({ organizationId, id, ...data })`. TypeORM's `preload()` only looks the entity up **by primary key (`id`)** — it does not filter by `organizationId`. That means:
+> - The `:organizationId` in the URL is **not actually verified as the project's real organization** before the update runs; the `RolesGuard` check only confirms the *caller* holds `OWNER`/`ADMIN` in *that* organization, not that the target project belongs to it.
+> - Whatever `organizationId` you pass gets merged into the entity and saved — so calling this with a project `id` that belongs to a *different* organization silently **reassigns that project** to the organization in the URL, as long as you hold `OWNER`/`ADMIN` there. This is a real cross-tenant issue, not just a cosmetic one — worth fixing (scope the lookup with a `findOne({ where: { organizationId, id } })` first, the way `getProjectByIdInOrganization` and `deleteIndividualProject` already do) before relying on this route in anything multi-tenant-sensitive.
+
+**Success — `200 OK`:** the updated project row — bare entity from `preload()`/`save()`, **without** `members` loaded.
+
+**Failure:**
+- `400 Bad Request` — invalid field value (e.g. `status` not in the enum), or an unknown field.
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of the organization in the URL, or is only a `MEMBER` there.
+- `404 Not Found` — no project with that `id` exists at all (checked by primary key only, per the caveat above).
+
+**Example:**
+
+```bash
+curl -X PATCH http://localhost:3001/api/organization/b1a2c3d4-.../project/5c2b1f4a-... \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"status": "ACTIVE"}'
+```
+
+---
+
+### `DELETE /api/organization/:organizationId/project/:id`
+
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER)` — **`OWNER` only**.
+
+No body. Unlike the project-member delete below (or the organization-member deletes), the service (`deleteIndividualProject`) does **not** check `result.affected` — it deletes scoped to `{ organizationId, id }` (properly scoped, unlike the `PATCH` above) and returns the raw TypeORM delete result either way.
+
+**Success — `200 OK`:** always, even if nothing matched:
+
+```json
+{ "raw": [], "affected": 0 }
+```
+
+`affected: 1` means a project was actually deleted; `affected: 0` silently means no project matched that `(organizationId, id)` pair — there's no `404 Not Found` to distinguish "deleted" from "nothing there."
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of the organization, or is a member but not the `OWNER`.
+
+**Example:**
+
+```bash
+curl -X DELETE http://localhost:3001/api/organization/b1a2c3d4-.../project/5c2b1f4a-... \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Project Members
+
+Route prefix is singular here too — `/api/project/:projectId/member...`. None of these three routes currently carry `@Roles(...)` (it's commented out in source on the `POST`, and simply absent on the other two), and — per the [Role-based authorization](#role-based-authorization-organization-endpoints) note above — these routes have no `:organizationId` param to key off of even if `@Roles(...)` were added as-is. So today, **any authenticated user can add, remove, or change the role of a member on any project**, regardless of organization or project membership.
+
+### `POST /api/project/:projectId/member`
+
+**Requires auth (JWT) only.**
+
+**Body (`ProjectMemberAddDto`):**
+
+| Field    | Type   | Rules                                       |
+|----------|--------|-----------------------------------------------|
+| `userId` | string | required, non-empty                          |
+| `role`   | string | required, non-empty — should be one of `LEAD` / `CONTRIBUTOR` / `VIEWER`, but (like `OrganizationMemberCreateDto.role`) this isn't enforced by validation |
+
+There's a DB-level `UNIQUE(projectId, userId)` constraint, but — unlike `OrganizationMemberService.createOrganizationMember`, which pre-checks and throws a clean `409` — this service doesn't check for an existing membership first. Adding a user who's already on the project surfaces as an uncaught `QueryFailedError`, i.e. a raw **`500 Internal Server Error`**.
+
+**Success — `201 Created`:** the created membership row:
+
+```json
+{
+  "projectId": "5c2b1f4a-...",
+  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "role": "CONTRIBUTOR",
+  "id": "7a1e9c22-...",
+  "addedAt": "2026-09-19T02:07:28.920Z"
+}
+```
+
+**Failure:**
+- `400 Bad Request` — missing/empty `userId` or `role`, or an unknown field.
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `500 Internal Server Error` — that user is already a member of this project (see above).
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3001/api/project/5c2b1f4a-.../member \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e", "role": "CONTRIBUTOR"}'
+```
+
+---
+
+### `DELETE /api/project/:projectId/member/:userId`
+
+**Requires auth (JWT) only.**
+
+No body. Deletes scoped to `{ projectId, userId }` and, unlike the project `DELETE` above, does check `result.affected`.
+
+**Success — `200 OK`:** empty body.
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `404 Not Found` — no member with that `userId` exists on this project.
+
+**Example:**
+
+```bash
+curl -X DELETE http://localhost:3001/api/project/5c2b1f4a-.../member/df7db73d-f047-44d5-9d51-62ec043bfe0e \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### `PATCH /api/project/:projectId/member/:userId`
+
+**Requires auth (JWT) only.**
+
+**Body (`ProjectMemberUpdateDto`):**
+
+| Field  | Type   | Rules                                                     |
+|--------|--------|-------------------------------------------------------------|
+| `role` | string | required, must be one of `LEAD` / `CONTRIBUTOR` / `VIEWER` (this one **is** enforced with `@IsEnum`, unlike the `POST` body above) |
+
+**Success — `200 OK`:** the updated membership row:
+
+```json
+{
+  "id": "7a1e9c22-...",
+  "projectId": "5c2b1f4a-...",
+  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "role": "LEAD",
+  "addedAt": "2026-09-19T02:07:28.920Z"
+}
+```
+
+**Failure:**
+- `400 Bad Request` — missing `role`, an invalid enum value, or an unknown field.
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `404 Not Found` — no member with that `userId` exists on this project.
+
+**Example:**
+
+```bash
+curl -X PATCH http://localhost:3001/api/project/5c2b1f4a-.../member/df7db73d-f047-44d5-9d51-62ec043bfe0e \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"role": "LEAD"}'
 ```
 
 ---
