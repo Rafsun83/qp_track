@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { ProjectMember } from '../../project_members/entity/project-member.entity.js';
 import { craeteProjectDto } from '../dto/project-create.dto.js';
+import { UpdateProjectDto } from '../dto/project-update.dto.js';
 import { Project } from '../entity/project.entity.js';
 
 @Injectable()
@@ -58,5 +59,22 @@ export class ProjectService {
         members: {},
       },
     });
+  }
+
+  async updateIndividualProject(
+    organizationId: string,
+    id: string,
+    data: UpdateProjectDto,
+  ) {
+    const project = await this.projectRepository.preload({
+      organizationId,
+      id,
+      ...data,
+    });
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    return this.projectRepository.save(project);
   }
 }

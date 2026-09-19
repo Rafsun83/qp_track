@@ -20,45 +20,45 @@ export class OrganizationMemberController {
   ) {}
 
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  @Post('organizations/:id/members')
+  @Post('organizations/:organizationId/members')
   createOrganizationMember(
-    @Param('id') id: string,
+    @Param('organizationId') organizationId: string,
     @Body() organizationData: OrganizationMemberCreateDto,
   ) {
     return this.organizationMemberService.createOrganizationMember(
-      id,
+      organizationId,
       organizationData,
     );
   }
 
-  @Get('organizations/:id/members')
-  findOrganizationAllMembers(@Param('id') id: string) {
-    return this.organizationMemberService.findAllMembers(id);
+  @Get('organizations/:organizationId/members')
+  findOrganizationAllMembers(@Param('organizationId') organizationId: string) {
+    return this.organizationMemberService.findAllMembers(organizationId);
   }
 
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  @Delete('organizations/:id/members/:userId')
+  @Delete('organizations/:organizationId/members/:userId')
   deletOrganizationMember(
-    @Param('id') id: string,
+    @Param('organizationId') organizationId: string,
     @Param('userId') userId: string,
     @Req() req: Request & { organizationMember: OrganizationMember },
   ) {
     return this.organizationMemberService.deleteMember(
-      id,
+      organizationId,
       req.organizationMember,
       userId,
     );
   }
 
   @Roles(OrganizationRole.ADMIN, OrganizationRole.MEMBER)
-  @Delete('organizations/:id/members/:userId/leave')
+  @Delete('organizations/:organizationId/members/:userId/leave')
   leaveFromOrganization(
-    @Param('id') id: string,
+    @Param('organizationId') organizationId: string,
     @Param('userId') userId: string,
     @Req() req: Request & { organizationMember: OrganizationMember },
   ) {
     return this.organizationMemberService.leaveMemberFromOrganization(
-      id,
+      organizationId,
       userId,
       req.organizationMember,
     );

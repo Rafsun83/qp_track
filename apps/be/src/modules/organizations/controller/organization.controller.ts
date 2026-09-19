@@ -34,17 +34,17 @@ export class OrganizationController {
     return this.organizationService.findAll(req.user.sub);
   }
 
-  @Get('organizations/:id')
-  findOneOrganization(@Param('id') id: string) {
-    return this.organizationService.findOne(id);
+  @Get('organizations/:organizationId')
+  findOneOrganization(@Param('organizationId') organizationId: string) {
+    return this.organizationService.findOne(organizationId);
   }
 
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
-  @Patch('organizations/:id')
+  @Patch('organizations/:organizationId')
   updateOrganization(
-    @Param('id') id: string,
+    @Param('organizationId') organizationId: string,
     @Body() organizationData: UpdateOrganizationDto,
   ) {
-    return this.organizationService.update(id, organizationData);
+    return this.organizationService.update(organizationId, organizationData);
   }
 }

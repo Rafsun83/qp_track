@@ -28,7 +28,7 @@ export class RolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     // Role lives on the org membership, not the JWT, so it must be
     // resolved per-request against the org the route is acting on.
-    const organizationId = request.params?.id;
+    const organizationId = request.params?.organizationId;
     const userId = request.user?.sub;
 
     const membership = await this.organizationMemberService.findMembership(
