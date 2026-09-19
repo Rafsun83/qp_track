@@ -7,6 +7,7 @@ import { DashboardPage } from "./pages/dashboard/DashboardPage";
 import { OrganizationDetailPage } from "./pages/organizations/OrganizationDetailPage";
 import { OrganizationsPage } from "./pages/organizations/OrganizationsPage";
 import { ProfilePage } from "./pages/profile/ProfilePage";
+import { ProjectDetailPage } from "./pages/projects/ProjectDetailPage";
 
 function App() {
   return (
@@ -24,6 +25,10 @@ function App() {
           <Route
             path="/organizations/:id"
             element={<OrganizationDetailPage />}
+          />
+          <Route
+            path="/organizations/:organizationId/projects/:projectId"
+            element={<ProjectDetailPage />}
           />
         </Route>
       </Route>

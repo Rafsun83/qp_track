@@ -7,6 +7,7 @@ import {
   leaveOrganizationMember,
   removeOrganizationMember,
 } from "../../api/organizations";
+import { createProject, getProjectsInOrganization } from "../../api/projects";
 import { searchUsersByUserName } from "../../api/users";
 import { useAuth } from "../../auth/AuthContext";
 import { Alert } from "../../components/ui/Alert";
@@ -15,6 +16,7 @@ import type {
   OrganizationMember,
   OrganizationRole,
 } from "../../types/organization";
+import type { Project } from "../../types/project";
 import type { User } from "../../types/user";
 import "./OrganizationDetailPage.css";
 
@@ -38,6 +40,18 @@ export function OrganizationDetailPage() {
 
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+
+  const [projectName, setProjectName] = useState("");
+  const [projectKey, setProjectKey] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [createProjectError, setCreateProjectError] = useState<
+    string | null
+  >(null);
 
   const loadOrganization = useCallback(() => {
     if (!token || !id) return;
@@ -86,6 +100,51 @@ export function OrganizationDetailPage() {
   );
   const isOwner = currentMembership?.role === "OWNER";
   const isAdmin = currentMembership?.role === "ADMIN";
+
+  // Listing an organization's projects requires the OWNER role in the backend, so
+  // there's no point calling it (or showing the section) for anyone else.
+  const loadProjects = useCallback(() => {
+    if (!token || !id || !isOwner) return;
+    setProjectsLoading(true);
+    setProjectsError(null);
+    getProjectsInOrganization(token, id)
+      .then(setProjects)
+      .catch((err) =>
+        setProjectsError(
+          err instanceof Error ? err.message : "Failed to load projects.",
+        ),
+      )
+      .finally(() => setProjectsLoading(false));
+  }, [token, id, isOwner]);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  async function handleCreateProject(event: FormEvent) {
+    event.preventDefault();
+    if (!token || !id) return;
+
+    setCreateProjectError(null);
+    setCreatingProject(true);
+    try {
+      await createProject(token, id, {
+        name: projectName,
+        description: projectDescription,
+        key: projectKey,
+      });
+      setProjectName("");
+      setProjectKey("");
+      setProjectDescription("");
+      loadProjects();
+    } catch (err) {
+      setCreateProjectError(
+        err instanceof ApiError ? err.message : "Failed to create project.",
+      );
+    } finally {
+      setCreatingProject(false);
+    }
+  }
 
   async function handleAddMember(event: FormEvent) {
     event.preventDefault();
@@ -229,6 +288,98 @@ export function OrganizationDetailPage() {
               {adding ? "Adding..." : "Add member"}
             </button>
           </form>
+        )}
+
+        {isOwner && (
+          <div className="org-projects">
+            <h2 className="org-projects__title">Projects</h2>
+
+            <form className="org-create-project-form" onSubmit={handleCreateProject}>
+              <div className="form-field">
+                <label htmlFor="project-name">Name</label>
+                <input
+                  id="project-name"
+                  type="text"
+                  placeholder="Project name"
+                  value={projectName}
+                  onChange={(event) => setProjectName(event.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="project-key">Key</label>
+                <input
+                  id="project-key"
+                  type="text"
+                  placeholder="e.g. WEB"
+                  value={projectKey}
+                  onChange={(event) => setProjectKey(event.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="project-description">Description</label>
+                <input
+                  id="project-description"
+                  type="text"
+                  placeholder="What is this project about?"
+                  value={projectDescription}
+                  onChange={(event) => setProjectDescription(event.target.value)}
+                  required
+                />
+              </div>
+
+              {createProjectError && (
+                <Alert variant="error">{createProjectError}</Alert>
+              )}
+
+              <button type="submit" disabled={creatingProject}>
+                {creatingProject ? "Creating..." : "Create project"}
+              </button>
+            </form>
+
+            {projectsLoading && (
+              <p className="org-detail__status">Loading projects...</p>
+            )}
+            {!projectsLoading && projectsError && (
+              <Alert variant="error">{projectsError}</Alert>
+            )}
+            {!projectsLoading && !projectsError && projects.length === 0 && (
+              <p className="org-detail__status">No projects yet.</p>
+            )}
+
+            {!projectsLoading && !projectsError && projects.length > 0 && (
+              <div className="project-card-grid">
+                {projects.map((project) => (
+                  <Link
+                    key={project.id}
+                    to={`/organizations/${organization.id}/projects/${project.id}`}
+                    className="project-card"
+                  >
+                    <div className="project-card__header">
+                      <span className="project-card__name">{project.name}</span>
+                      <span className="project-card__key">{project.key}</span>
+                    </div>
+                    <p className="project-card__description">
+                      {project.description}
+                    </p>
+                    <div className="project-card__footer">
+                      <span
+                        className={`project-card__status project-card__status--${project.status.toLowerCase()}`}
+                      >
+                        {project.status}
+                      </span>
+                      <span className="project-card__meta">
+                        {project.members?.length ?? 0} member(s)
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
