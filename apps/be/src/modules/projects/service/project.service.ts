@@ -77,4 +77,13 @@ export class ProjectService {
 
     return this.projectRepository.save(project);
   }
+
+  async deleteIndividualProject(organizationId: string, id: string) {
+    const result = await this.projectRepository.delete({
+      organizationId,
+      id,
+    });
+
+    return result;
+  }
 }

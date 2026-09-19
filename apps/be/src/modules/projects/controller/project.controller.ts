@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { CurrentUser } from '../../auth/decorator/current-user.decorator.js';
 import { Roles } from '../../auth/decorator/roles.decorator.js';
 import { CurrentUserDto } from '../../auth/dto/current-user.dto.js';
@@ -54,5 +62,14 @@ export class ProjectController {
       id,
       data,
     );
+  }
+
+  @Roles(OrganizationRole.OWNER)
+  @Delete('organization/:organizationId/project/:id')
+  deleteProject(
+    @Param('organizationId') organizationId: string,
+    @Param('id') id: string,
+  ) {
+    return this.projectService.deleteIndividualProject(organizationId, id);
   }
 }
