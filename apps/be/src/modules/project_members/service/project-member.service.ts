@@ -1,9 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProjectMemberUpdateDto } from '../dto/project-member-update.dto.js';
 import { ProjectMemberAddDto } from '../dto/project-member.dto.js';
 import { ProjectMember } from '../entity/project-member.entity.js';
+import { ProjectRole } from '../enum/project-role.enum.js';
 
 @Injectable()
 export class ProjectMemberService {
@@ -12,7 +17,19 @@ export class ProjectMemberService {
     private readonly projectMemberRepository: Repository<ProjectMember>,
   ) {}
 
-  addProjectMember(projectId: string, { role, userId }: ProjectMemberAddDto) {
+  async addProjectMember(
+    projectId: string,
+    { role, userId }: ProjectMemberAddDto,
+  ) {
+    if (role === ProjectRole.LEAD) {
+      const existingLead = await this.projectMemberRepository.findOne({
+        where: { projectId, role: ProjectRole.LEAD },
+      });
+      if (existingLead) {
+        throw new ConflictException('Project already has a LEAD');
+      }
+    }
+
     return this.projectMemberRepository.save({ projectId, role, userId });
   }
 
@@ -38,6 +55,15 @@ export class ProjectMemberService {
 
     if (!member) {
       throw new NotFoundException('Project member not found');
+    }
+
+    if (role === ProjectRole.LEAD && member.role !== ProjectRole.LEAD) {
+      const existingLead = await this.projectMemberRepository.findOne({
+        where: { projectId, role: ProjectRole.LEAD },
+      });
+      if (existingLead) {
+        throw new ConflictException('Project already has a LEAD');
+      }
     }
 
     member.role = role;
