@@ -15,6 +15,7 @@ import {
 import { getUserById, searchUsersByUserName } from "../../api/users";
 import { useAuth } from "../../auth/AuthContext";
 import { Alert } from "../../components/ui/Alert";
+import { Modal } from "../../components/ui/Modal";
 import type { Organization } from "../../types/organization";
 import type { Project, ProjectRole, ProjectStatus } from "../../types/project";
 import type { User } from "../../types/user";
@@ -47,17 +48,18 @@ export function ProjectDetailPage() {
   // so member names are resolved with individual lookups here.
   const [memberUsers, setMemberUsers] = useState<Record<string, User>>({});
 
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [key, setKey] = useState("");
   const [status, setStatus] = useState<ProjectStatus>("PLANNING");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const [addMemberModalOpen, setAddMemberModalOpen] = useState(false);
   const [userQuery, setUserQuery] = useState("");
   const [userResults, setUserResults] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -172,7 +174,6 @@ export function ProjectDetailPage() {
     if (!token || !organizationId || !projectId) return;
 
     setSaveError(null);
-    setSaveSuccess(false);
     setSaving(true);
     try {
       await updateProject(token, organizationId, projectId, {
@@ -181,7 +182,7 @@ export function ProjectDetailPage() {
         key,
         status,
       });
-      setSaveSuccess(true);
+      setEditModalOpen(false);
       loadProject();
     } catch (err) {
       setSaveError(
@@ -189,6 +190,18 @@ export function ProjectDetailPage() {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  function closeEditModal() {
+    setEditModalOpen(false);
+    setSaveError(null);
+    setDeleteError(null);
+    if (project) {
+      setName(project.name);
+      setDescription(project.description);
+      setKey(project.key);
+      setStatus(project.status);
     }
   }
 
@@ -226,6 +239,7 @@ export function ProjectDetailPage() {
       setUserQuery("");
       setUserResults([]);
       setNewMemberRole("CONTRIBUTOR");
+      setAddMemberModalOpen(false);
       loadProject();
     } catch (err) {
       setAddError(
@@ -234,6 +248,15 @@ export function ProjectDetailPage() {
     } finally {
       setAdding(false);
     }
+  }
+
+  function closeAddMemberModal() {
+    setAddMemberModalOpen(false);
+    setAddError(null);
+    setSelectedUser(null);
+    setUserQuery("");
+    setUserResults([]);
+    setNewMemberRole("CONTRIBUTOR");
   }
 
   async function handleRemoveMember(memberUserId: string) {
@@ -289,20 +312,26 @@ export function ProjectDetailPage() {
         >
           ← {organization?.name ?? "Organization"}
         </Link>
-        <h1 className="project-detail__title">{project.name}</h1>
+        <div className="project-detail__title-row">
+          <h1 className="project-detail__title">{project.name}</h1>
+          {canManageProject && (
+            <button
+              type="button"
+              className="project-detail__action-btn"
+              onClick={() => setEditModalOpen(true)}
+            >
+              Edit project
+            </button>
+          )}
+        </div>
         <p className="project-detail__meta">
           Key: {project.key} · Status: {project.status} · Created{" "}
           {new Date(project.createdAt).toLocaleDateString()}
         </p>
         <p className="project-detail__description">{project.description}</p>
 
-        {canManageProject && (
-          <form
-            className="project-update-form"
-            onSubmit={handleUpdateProject}
-          >
-            <h2 className="project-update-form__title">Update project</h2>
-
+        <Modal open={editModalOpen} onClose={closeEditModal} title="Update project">
+          <form className="project-update-form" onSubmit={handleUpdateProject}>
             <div className="form-field">
               <label htmlFor="project-edit-name">Name</label>
               <input
@@ -311,6 +340,7 @@ export function ProjectDetailPage() {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 required
+                autoFocus
               />
             </div>
 
@@ -354,9 +384,6 @@ export function ProjectDetailPage() {
             </div>
 
             {saveError && <Alert variant="error">{saveError}</Alert>}
-            {saveSuccess && !saveError && (
-              <Alert variant="success">Project updated.</Alert>
-            )}
 
             <div className="project-update-form__actions">
               <button type="submit" disabled={saving}>
@@ -377,12 +404,29 @@ export function ProjectDetailPage() {
 
             {deleteError && <Alert variant="error">{deleteError}</Alert>}
           </form>
-        )}
+        </Modal>
+      </div>
 
-        {isProjectLead && (
+      <aside className="project-detail__members">
+        <div className="project-detail__members-header">
+          <h2 className="project-detail__members-title">Members</h2>
+          {isProjectLead && (
+            <button
+              type="button"
+              className="project-detail__action-btn"
+              onClick={() => setAddMemberModalOpen(true)}
+            >
+              Add member
+            </button>
+          )}
+        </div>
+
+        <Modal
+          open={addMemberModalOpen}
+          onClose={closeAddMemberModal}
+          title="Add member"
+        >
           <form className="project-add-member-form" onSubmit={handleAddMember}>
-            <h2 className="project-add-member-form__title">Add member</h2>
-
             <div className="form-field">
               <label htmlFor="project-member-search">User</label>
               <input
@@ -395,6 +439,7 @@ export function ProjectDetailPage() {
                   setUserQuery(event.target.value);
                 }}
                 autoComplete="off"
+                autoFocus
               />
               {userResults.length > 0 && (
                 <ul className="project-user-suggestions">
@@ -438,11 +483,8 @@ export function ProjectDetailPage() {
               {adding ? "Adding..." : "Add member"}
             </button>
           </form>
-        )}
-      </div>
+        </Modal>
 
-      <aside className="project-detail__members">
-        <h2 className="project-detail__members-title">Members</h2>
         {memberActionError && <Alert variant="error">{memberActionError}</Alert>}
         <ul className="project-member-list">
           {project.members?.map((member) => {

@@ -38,19 +38,24 @@
   font-size: 14px;
 }
 
+.org-detail__action-btn {
+  display: inline-block;
+  margin-bottom: 24px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
 .org-add-member-form {
-  max-width: 360px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.org-add-member-form__title {
-  margin: 0;
-  font-size: 15px;
 }
 
 .org-add-member-form .form-field {
@@ -198,23 +203,30 @@
 }
 
 .org-projects {
-  margin-top: 32px;
+  margin-top: 8px;
+}
+
+.org-projects__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .org-projects__title {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 15px;
 }
 
+.org-projects__header .org-detail__action-btn {
+  margin-bottom: 0;
+}
+
 .org-create-project-form {
-  max-width: 480px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 16px;
-  margin-bottom: 20px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
 }
 
 .org-create-project-form .form-field {

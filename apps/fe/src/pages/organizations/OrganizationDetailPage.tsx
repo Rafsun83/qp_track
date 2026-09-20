@@ -11,6 +11,7 @@ import { createProject, getProjectsInOrganization } from "../../api/projects";
 import { searchUsersByUserName } from "../../api/users";
 import { useAuth } from "../../auth/AuthContext";
 import { Alert } from "../../components/ui/Alert";
+import { Modal } from "../../components/ui/Modal";
 import type {
   Organization,
   OrganizationMember,
@@ -31,6 +32,7 @@ export function OrganizationDetailPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [addMemberModalOpen, setAddMemberModalOpen] = useState(false);
   const [userQuery, setUserQuery] = useState("");
   const [userResults, setUserResults] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -45,6 +47,7 @@ export function OrganizationDetailPage() {
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
 
+  const [createProjectModalOpen, setCreateProjectModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectKey, setProjectKey] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
@@ -136,6 +139,7 @@ export function OrganizationDetailPage() {
       setProjectName("");
       setProjectKey("");
       setProjectDescription("");
+      setCreateProjectModalOpen(false);
       loadProjects();
     } catch (err) {
       setCreateProjectError(
@@ -144,6 +148,11 @@ export function OrganizationDetailPage() {
     } finally {
       setCreatingProject(false);
     }
+  }
+
+  function closeCreateProjectModal() {
+    setCreateProjectModalOpen(false);
+    setCreateProjectError(null);
   }
 
   async function handleAddMember(event: FormEvent) {
@@ -158,6 +167,7 @@ export function OrganizationDetailPage() {
       setUserQuery("");
       setUserResults([]);
       setRole("MEMBER");
+      setAddMemberModalOpen(false);
       loadOrganization();
     } catch (err) {
       setAddError(
@@ -166,6 +176,15 @@ export function OrganizationDetailPage() {
     } finally {
       setAdding(false);
     }
+  }
+
+  function closeAddMemberModal() {
+    setAddMemberModalOpen(false);
+    setAddError(null);
+    setSelectedUser(null);
+    setUserQuery("");
+    setUserResults([]);
+    setRole("MEMBER");
   }
 
   // Only an OWNER may call the plain delete route; everyone else who's
@@ -230,115 +249,151 @@ export function OrganizationDetailPage() {
         </p>
 
         {isOwner && (
-          <form className="org-add-member-form" onSubmit={handleAddMember}>
-            <h2 className="org-add-member-form__title">Add member</h2>
-
-            <div className="form-field">
-              <label htmlFor="member-search">User</label>
-              <input
-                id="member-search"
-                type="text"
-                placeholder="Search by username"
-                value={selectedUser ? selectedUser.userName : userQuery}
-                onChange={(event) => {
-                  setSelectedUser(null);
-                  setUserQuery(event.target.value);
-                }}
-                autoComplete="off"
-              />
-              {userResults.length > 0 && (
-                <ul className="org-user-suggestions">
-                  {userResults.map((candidate) => (
-                    <li key={candidate.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedUser(candidate);
-                          setUserResults([]);
-                        }}
-                      >
-                        {candidate.userName} ({candidate.name})
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="form-field">
-              <label htmlFor="member-role">Role</label>
-              <select
-                id="member-role"
-                value={role}
-                onChange={(event) =>
-                  setRole(event.target.value as OrganizationRole)
-                }
-              >
-                {ASSIGNABLE_ROLES.map((assignableRole) => (
-                  <option key={assignableRole} value={assignableRole}>
-                    {assignableRole}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {addError && <Alert variant="error">{addError}</Alert>}
-
-            <button type="submit" disabled={adding || !selectedUser}>
-              {adding ? "Adding..." : "Add member"}
+          <>
+            <button
+              type="button"
+              className="org-detail__action-btn"
+              onClick={() => setAddMemberModalOpen(true)}
+            >
+              Add member
             </button>
-          </form>
+
+            <Modal
+              open={addMemberModalOpen}
+              onClose={closeAddMemberModal}
+              title="Add member"
+            >
+              <form className="org-add-member-form" onSubmit={handleAddMember}>
+                <div className="form-field">
+                  <label htmlFor="member-search">User</label>
+                  <input
+                    id="member-search"
+                    type="text"
+                    placeholder="Search by username"
+                    value={selectedUser ? selectedUser.userName : userQuery}
+                    onChange={(event) => {
+                      setSelectedUser(null);
+                      setUserQuery(event.target.value);
+                    }}
+                    autoComplete="off"
+                    autoFocus
+                  />
+                  {userResults.length > 0 && (
+                    <ul className="org-user-suggestions">
+                      {userResults.map((candidate) => (
+                        <li key={candidate.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedUser(candidate);
+                              setUserResults([]);
+                            }}
+                          >
+                            {candidate.userName} ({candidate.name})
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="member-role">Role</label>
+                  <select
+                    id="member-role"
+                    value={role}
+                    onChange={(event) =>
+                      setRole(event.target.value as OrganizationRole)
+                    }
+                  >
+                    {ASSIGNABLE_ROLES.map((assignableRole) => (
+                      <option key={assignableRole} value={assignableRole}>
+                        {assignableRole}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {addError && <Alert variant="error">{addError}</Alert>}
+
+                <button type="submit" disabled={adding || !selectedUser}>
+                  {adding ? "Adding..." : "Add member"}
+                </button>
+              </form>
+            </Modal>
+          </>
         )}
 
         {isOwner && (
           <div className="org-projects">
-            <h2 className="org-projects__title">Projects</h2>
-
-            <form className="org-create-project-form" onSubmit={handleCreateProject}>
-              <div className="form-field">
-                <label htmlFor="project-name">Name</label>
-                <input
-                  id="project-name"
-                  type="text"
-                  placeholder="Project name"
-                  value={projectName}
-                  onChange={(event) => setProjectName(event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-field">
-                <label htmlFor="project-key">Key</label>
-                <input
-                  id="project-key"
-                  type="text"
-                  placeholder="e.g. WEB"
-                  value={projectKey}
-                  onChange={(event) => setProjectKey(event.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-field">
-                <label htmlFor="project-description">Description</label>
-                <input
-                  id="project-description"
-                  type="text"
-                  placeholder="What is this project about?"
-                  value={projectDescription}
-                  onChange={(event) => setProjectDescription(event.target.value)}
-                  required
-                />
-              </div>
-
-              {createProjectError && (
-                <Alert variant="error">{createProjectError}</Alert>
-              )}
-
-              <button type="submit" disabled={creatingProject}>
-                {creatingProject ? "Creating..." : "Create project"}
+            <div className="org-projects__header">
+              <h2 className="org-projects__title">Projects</h2>
+              <button
+                type="button"
+                className="org-detail__action-btn"
+                onClick={() => setCreateProjectModalOpen(true)}
+              >
+                New project
               </button>
-            </form>
+            </div>
+
+            <Modal
+              open={createProjectModalOpen}
+              onClose={closeCreateProjectModal}
+              title="Create project"
+            >
+              <form
+                className="org-create-project-form"
+                onSubmit={handleCreateProject}
+              >
+                <div className="form-field">
+                  <label htmlFor="project-name">Name</label>
+                  <input
+                    id="project-name"
+                    type="text"
+                    placeholder="Project name"
+                    value={projectName}
+                    onChange={(event) => setProjectName(event.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="project-key">Key</label>
+                  <input
+                    id="project-key"
+                    type="text"
+                    placeholder="e.g. WEB"
+                    value={projectKey}
+                    onChange={(event) => setProjectKey(event.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="project-description">Description</label>
+                  <input
+                    id="project-description"
+                    type="text"
+                    placeholder="What is this project about?"
+                    value={projectDescription}
+                    onChange={(event) =>
+                      setProjectDescription(event.target.value)
+                    }
+                    required
+                  />
+                </div>
+
+                {createProjectError && (
+                  <Alert variant="error">{createProjectError}</Alert>
+                )}
+
+                <button type="submit" disabled={creatingProject}>
+                  {creatingProject ? "Creating..." : "Create project"}
+                </button>
+              </form>
+            </Modal>
 
             {projectsLoading && (
               <p className="org-detail__status">Loading projects...</p>
