@@ -67,6 +67,119 @@
   color: var(--text-h);
 }
 
+.project-sprints {
+  margin-bottom: 24px;
+}
+
+.project-sprints__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.project-sprints__title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.sprint-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.sprint-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.sprint-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.sprint-card__name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.sprint-card__dates {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.sprint-card__date-sep {
+  color: var(--text);
+  font-weight: 400;
+}
+
+/* The relative-time hint ("3 days left", "starts tomorrow", ...) is the
+   thing that actually tells a reader whether a sprint needs attention now -
+   the status badge alone doesn't carry that. */
+.sprint-timing {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.sprint-timing--upcoming {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.sprint-timing--active {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.sprint-timing--ended {
+  background: var(--neutral-bg);
+  color: var(--neutral);
+}
+
+.sprint-card__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.sprint-card__edit,
+.sprint-card__delete {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sprint-card__edit {
+  border-color: var(--info-border);
+  color: var(--info);
+}
+
+.sprint-card__delete {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
 .project-detail__status {
   padding: 20px 0;
   color: var(--text);

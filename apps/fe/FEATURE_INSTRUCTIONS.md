@@ -14,3 +14,5 @@ You will modify my project follow the instructions:-
 6. I have updated project delete API, and project memebr delete API, you can see in the API GIDE file, kindly update the design of remove project member and project delete design.
 
 7. Update the color combination, like project status always same color, so need to color variation to understand user, as well delete button, edit button all kinds of various action color will be meaningful, do it.
+
+8. I have added Sprints modules and you will get API in API_GUIDE.md file, Now Implement it in the project, Sprint show under the project and Show it's as card wise, must hihglight end date start date and name as well remeber you that user can understand properly when a sprint

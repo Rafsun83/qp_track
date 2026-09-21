@@ -84,7 +84,8 @@ h2 {
   white-space: nowrap;
 }
 
-.status-badge--planning {
+.status-badge--planning,
+.status-badge--planned {
   background: var(--neutral-bg);
   color: var(--neutral);
 }
