@@ -422,7 +422,7 @@ export function OrganizationDetailPage() {
                     </p>
                     <div className="project-card__footer">
                       <span
-                        className={`project-card__status project-card__status--${project.status.toLowerCase()}`}
+                        className={`status-badge status-badge--${project.status.toLowerCase()}`}
                       >
                         {project.status}
                       </span>
@@ -456,7 +456,11 @@ export function OrganizationDetailPage() {
                 {action && (
                   <button
                     type="button"
-                    className="org-member-list__remove"
+                    className={
+                      action.label === "Leave"
+                        ? "org-member-list__action org-member-list__action--leave"
+                        : "org-member-list__action org-member-list__action--remove"
+                    }
                     disabled={isBusy}
                     onClick={() =>
                       handleMemberAction(member.userId, action.useDeleteApi)

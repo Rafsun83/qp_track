@@ -10,3 +10,7 @@ You will modify my project follow the instructions:-
 4. I have added project module and project member module, So implement those API, remeber project always create owner of organization and and It will be create under organization I have already validate in backend, After create project then the project creator can add another people as memebr, for each project will create a card, and also create option update project and update user role settings option.
 
 5. Now update the UI for better UX, You have added form in page, like, add organization member, Add project, add project memebr and update project. Now change the design, those form will be open in modal, as user can get better ux experience, and also mdify if you think what whould be better for user.
+
+6. I have updated project delete API, and project memebr delete API, you can see in the API GIDE file, kindly update the design of remove project member and project delete design.
+
+7. Update the color combination, like project status always same color, so need to color variation to understand user, as well delete button, edit button all kinds of various action color will be meaningful, do it.

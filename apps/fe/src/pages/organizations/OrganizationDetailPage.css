@@ -185,21 +185,32 @@
   color: var(--text);
 }
 
-.org-member-list__remove {
+.org-member-list__action {
   font: inherit;
   font-size: 12px;
   padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: none;
-  color: #dc2626;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.org-member-list__remove:disabled {
+.org-member-list__action:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Removing someone else is destructive; leaving is a self-initiated,
+   less severe action - color them differently so they don't read the same. */
+.org-member-list__action--remove {
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.org-member-list__action--leave {
+  border-color: var(--warning-border);
+  color: var(--warning);
 }
 
 .org-projects {
@@ -330,15 +341,6 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.project-card__status {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent-bg);
-  color: var(--accent);
 }
 
 .project-card__meta {

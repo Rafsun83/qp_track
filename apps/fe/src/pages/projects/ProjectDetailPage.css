@@ -47,6 +47,14 @@
   cursor: pointer;
 }
 
+/* Editing is a lighter-weight action than adding/creating - an outlined
+   info color reads as "modify" rather than the filled accent "create/add". */
+.project-detail__action-btn--edit {
+  background: none;
+  border: 1px solid var(--info-border);
+  color: var(--info);
+}
+
 .project-detail__meta {
   margin: 0 0 8px;
   font-size: 13px;
@@ -134,9 +142,9 @@
 }
 
 .project-update-form__delete {
-  background: none;
-  border: 1px solid var(--border);
-  color: #dc2626;
+  background: var(--danger);
+  border: none;
+  color: #fff;
 }
 
 .project-user-suggestions {
@@ -172,6 +180,50 @@
 
 .project-user-suggestions button:hover {
   background: var(--accent-bg);
+}
+
+.confirm-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.confirm-modal__message {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.confirm-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.confirm-modal__actions button {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.confirm-modal__actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.confirm-modal__cancel {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-h);
+}
+
+.confirm-modal__confirm {
+  background: var(--danger);
+  color: #fff;
 }
 
 .project-detail__members {
@@ -260,8 +312,14 @@
   cursor: not-allowed;
 }
 
+.project-member-list__save {
+  border-color: var(--success-border);
+  color: var(--success);
+}
+
 .project-member-list__remove {
-  color: #dc2626;
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 
 @media (max-width: 720px) {

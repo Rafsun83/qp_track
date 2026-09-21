@@ -58,6 +58,7 @@ export function ProjectDetailPage() {
 
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const [addMemberModalOpen, setAddMemberModalOpen] = useState(false);
   const [userQuery, setUserQuery] = useState("");
@@ -74,6 +75,10 @@ export function ProjectDetailPage() {
   const [roleDrafts, setRoleDrafts] = useState<Record<string, ProjectRole>>(
     {},
   );
+  const [memberToRemove, setMemberToRemove] = useState<{
+    userId: string;
+    name: string;
+  } | null>(null);
 
   const loadProject = useCallback(() => {
     if (!token || !organizationId || !projectId) return;
@@ -162,12 +167,16 @@ export function ProjectDetailPage() {
   );
   const canManageProject =
     orgMembership?.role === "OWNER" || orgMembership?.role === "ADMIN";
-  const canDeleteProject = orgMembership?.role === "OWNER";
 
   const projectMembership = project?.members?.find(
     (member) => member.userId === userId,
   );
   const isProjectLead = projectMembership?.role === "LEAD";
+
+  // Deleting a project now requires org OWNER *and* being this project's
+  // LEAD (the backend checks both) - hide the action entirely otherwise
+  // instead of letting the request fail with a 403.
+  const canDeleteProject = orgMembership?.role === "OWNER" && isProjectLead;
 
   async function handleUpdateProject(event: FormEvent) {
     event.preventDefault();
@@ -205,11 +214,13 @@ export function ProjectDetailPage() {
     }
   }
 
+  function closeDeleteConfirm() {
+    setDeleteConfirmOpen(false);
+    setDeleteError(null);
+  }
+
   async function handleDeleteProject() {
     if (!token || !organizationId || !projectId) return;
-    if (!window.confirm(`Delete project "${project?.name}"? This cannot be undone.`)) {
-      return;
-    }
 
     setDeleteError(null);
     setDeleting(true);
@@ -218,7 +229,9 @@ export function ProjectDetailPage() {
       navigate(`/organizations/${organizationId}`);
     } catch (err) {
       setDeleteError(
-        err instanceof ApiError ? err.message : "Failed to delete project.",
+        err instanceof ApiError
+          ? err.message
+          : "Failed to delete project.",
       );
       setDeleting(false);
     }
@@ -259,13 +272,20 @@ export function ProjectDetailPage() {
     setNewMemberRole("CONTRIBUTOR");
   }
 
-  async function handleRemoveMember(memberUserId: string) {
-    if (!token || !projectId) return;
+  function closeRemoveMemberConfirm() {
+    setMemberToRemove(null);
+    setMemberActionError(null);
+  }
 
+  async function handleConfirmRemoveMember() {
+    if (!token || !projectId || !memberToRemove) return;
+
+    const { userId: memberUserId } = memberToRemove;
     setMemberActionError(null);
     setBusyUserId(memberUserId);
     try {
       await removeProjectMember(token, projectId, memberUserId);
+      setMemberToRemove(null);
       loadProject();
     } catch (err) {
       setMemberActionError(
@@ -317,7 +337,7 @@ export function ProjectDetailPage() {
           {canManageProject && (
             <button
               type="button"
-              className="project-detail__action-btn"
+              className="project-detail__action-btn project-detail__action-btn--edit"
               onClick={() => setEditModalOpen(true)}
             >
               Edit project
@@ -325,8 +345,13 @@ export function ProjectDetailPage() {
           )}
         </div>
         <p className="project-detail__meta">
-          Key: {project.key} · Status: {project.status} · Created{" "}
-          {new Date(project.createdAt).toLocaleDateString()}
+          Key: {project.key} · Status{" "}
+          <span
+            className={`status-badge status-badge--${project.status.toLowerCase()}`}
+          >
+            {project.status}
+          </span>{" "}
+          · Created {new Date(project.createdAt).toLocaleDateString()}
         </p>
         <p className="project-detail__description">{project.description}</p>
 
@@ -394,16 +419,50 @@ export function ProjectDetailPage() {
                 <button
                   type="button"
                   className="project-update-form__delete"
-                  disabled={deleting}
-                  onClick={handleDeleteProject}
+                  onClick={() => {
+                    setEditModalOpen(false);
+                    setDeleteConfirmOpen(true);
+                  }}
                 >
-                  {deleting ? "Deleting..." : "Delete project"}
+                  Delete project
                 </button>
               )}
             </div>
+          </form>
+        </Modal>
+
+        <Modal
+          open={deleteConfirmOpen}
+          onClose={closeDeleteConfirm}
+          title="Delete project"
+        >
+          <div className="confirm-modal">
+            <p className="confirm-modal__message">
+              Delete project <strong>{project.name}</strong>? This cannot be
+              undone.
+            </p>
 
             {deleteError && <Alert variant="error">{deleteError}</Alert>}
-          </form>
+
+            <div className="confirm-modal__actions">
+              <button
+                type="button"
+                className="confirm-modal__cancel"
+                disabled={deleting}
+                onClick={closeDeleteConfirm}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="confirm-modal__confirm"
+                disabled={deleting}
+                onClick={handleDeleteProject}
+              >
+                {deleting ? "Deleting..." : "Delete project"}
+              </button>
+            </div>
+          </div>
         </Modal>
       </div>
 
@@ -485,7 +544,9 @@ export function ProjectDetailPage() {
           </form>
         </Modal>
 
-        {memberActionError && <Alert variant="error">{memberActionError}</Alert>}
+        {memberActionError && !memberToRemove && (
+          <Alert variant="error">{memberActionError}</Alert>
+        )}
         <ul className="project-member-list">
           {project.members?.map((member) => {
             const isBusy = busyUserId === member.userId;
@@ -517,6 +578,7 @@ export function ProjectDetailPage() {
                     </select>
                     <button
                       type="button"
+                      className="project-member-list__save"
                       disabled={isBusy || draftRole === member.role}
                       onClick={() => handleSaveRole(member.userId)}
                     >
@@ -526,7 +588,12 @@ export function ProjectDetailPage() {
                       type="button"
                       className="project-member-list__remove"
                       disabled={isBusy}
-                      onClick={() => handleRemoveMember(member.userId)}
+                      onClick={() =>
+                        setMemberToRemove({
+                          userId: member.userId,
+                          name: displayName,
+                        })
+                      }
                     >
                       {isBusy ? "Working..." : "Remove"}
                     </button>
@@ -540,6 +607,44 @@ export function ProjectDetailPage() {
             );
           })}
         </ul>
+
+        <Modal
+          open={memberToRemove !== null}
+          onClose={closeRemoveMemberConfirm}
+          title="Remove member"
+        >
+          <div className="confirm-modal">
+            <p className="confirm-modal__message">
+              Remove <strong>{memberToRemove?.name}</strong> from this
+              project?
+            </p>
+
+            {memberActionError && (
+              <Alert variant="error">{memberActionError}</Alert>
+            )}
+
+            <div className="confirm-modal__actions">
+              <button
+                type="button"
+                className="confirm-modal__cancel"
+                disabled={busyUserId === memberToRemove?.userId}
+                onClick={closeRemoveMemberConfirm}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="confirm-modal__confirm"
+                disabled={busyUserId === memberToRemove?.userId}
+                onClick={handleConfirmRemoveMember}
+              >
+                {busyUserId === memberToRemove?.userId
+                  ? "Removing..."
+                  : "Remove"}
+              </button>
+            </div>
+          </div>
+        </Modal>
       </aside>
     </div>
   );
