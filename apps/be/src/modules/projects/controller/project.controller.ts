@@ -33,10 +33,16 @@ export class ProjectController {
     );
   }
 
-  @Roles(OrganizationRole.OWNER)
+  // @Roles(OrganizationRole.OWNER)
   @Get('organization/:organizationId/project')
-  getAllProjectInOrganization(@Param('organizationId') organizationId: string) {
-    return this.projectService.getAllProjectsInOrganizations(organizationId);
+  getAllProjectInOrganization(
+    @Param('organizationId') organizationId: string,
+    @CurrentUser() currentuser: CurrentUserDto,
+  ) {
+    return this.projectService.getAllProjectsInOrganizations(
+      organizationId,
+      currentuser,
+    );
   }
 
   @Get('organization/:organizationId/project/:id')

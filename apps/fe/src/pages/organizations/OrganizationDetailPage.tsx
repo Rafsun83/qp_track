@@ -52,9 +52,9 @@ export function OrganizationDetailPage() {
   const [projectKey, setProjectKey] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
-  const [createProjectError, setCreateProjectError] = useState<
-    string | null
-  >(null);
+  const [createProjectError, setCreateProjectError] = useState<string | null>(
+    null,
+  );
 
   const loadOrganization = useCallback(() => {
     if (!token || !id) return;
@@ -107,7 +107,7 @@ export function OrganizationDetailPage() {
   // Listing an organization's projects requires the OWNER role in the backend, so
   // there's no point calling it (or showing the section) for anyone else.
   const loadProjects = useCallback(() => {
-    if (!token || !id || !isOwner) return;
+    if (!token || !id) return;
     setProjectsLoading(true);
     setProjectsError(null);
     getProjectsInOrganization(token, id)
@@ -189,7 +189,10 @@ export function OrganizationDetailPage() {
 
   // Only an OWNER may call the plain delete route; everyone else who's
   // allowed to remove/leave goes through the leave route instead.
-  async function handleMemberAction(memberUserId: string, useDeleteApi: boolean) {
+  async function handleMemberAction(
+    memberUserId: string,
+    useDeleteApi: boolean,
+  ) {
     if (!token || !id) return;
 
     setRemoveError(null);
@@ -324,118 +327,118 @@ export function OrganizationDetailPage() {
           </>
         )}
 
-        {isOwner && (
-          <div className="org-projects">
-            <div className="org-projects__header">
-              <h2 className="org-projects__title">Projects</h2>
-              <button
-                type="button"
-                className="org-detail__action-btn"
-                onClick={() => setCreateProjectModalOpen(true)}
-              >
-                New project
-              </button>
-            </div>
-
-            <Modal
-              open={createProjectModalOpen}
-              onClose={closeCreateProjectModal}
-              title="Create project"
+        {/* {isOwner && ( */}
+        <div className="org-projects">
+          <div className="org-projects__header">
+            <h2 className="org-projects__title">Projects</h2>
+            <button
+              type="button"
+              className="org-detail__action-btn"
+              onClick={() => setCreateProjectModalOpen(true)}
             >
-              <form
-                className="org-create-project-form"
-                onSubmit={handleCreateProject}
-              >
-                <div className="form-field">
-                  <label htmlFor="project-name">Name</label>
-                  <input
-                    id="project-name"
-                    type="text"
-                    placeholder="Project name"
-                    value={projectName}
-                    onChange={(event) => setProjectName(event.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                <div className="form-field">
-                  <label htmlFor="project-key">Key</label>
-                  <input
-                    id="project-key"
-                    type="text"
-                    placeholder="e.g. WEB"
-                    value={projectKey}
-                    onChange={(event) => setProjectKey(event.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-field">
-                  <label htmlFor="project-description">Description</label>
-                  <input
-                    id="project-description"
-                    type="text"
-                    placeholder="What is this project about?"
-                    value={projectDescription}
-                    onChange={(event) =>
-                      setProjectDescription(event.target.value)
-                    }
-                    required
-                  />
-                </div>
-
-                {createProjectError && (
-                  <Alert variant="error">{createProjectError}</Alert>
-                )}
-
-                <button type="submit" disabled={creatingProject}>
-                  {creatingProject ? "Creating..." : "Create project"}
-                </button>
-              </form>
-            </Modal>
-
-            {projectsLoading && (
-              <p className="org-detail__status">Loading projects...</p>
-            )}
-            {!projectsLoading && projectsError && (
-              <Alert variant="error">{projectsError}</Alert>
-            )}
-            {!projectsLoading && !projectsError && projects.length === 0 && (
-              <p className="org-detail__status">No projects yet.</p>
-            )}
-
-            {!projectsLoading && !projectsError && projects.length > 0 && (
-              <div className="project-card-grid">
-                {projects.map((project) => (
-                  <Link
-                    key={project.id}
-                    to={`/organizations/${organization.id}/projects/${project.id}`}
-                    className="project-card"
-                  >
-                    <div className="project-card__header">
-                      <span className="project-card__name">{project.name}</span>
-                      <span className="project-card__key">{project.key}</span>
-                    </div>
-                    <p className="project-card__description">
-                      {project.description}
-                    </p>
-                    <div className="project-card__footer">
-                      <span
-                        className={`status-badge status-badge--${project.status.toLowerCase()}`}
-                      >
-                        {project.status}
-                      </span>
-                      <span className="project-card__meta">
-                        {project.members?.length ?? 0} member(s)
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
+              New project
+            </button>
           </div>
-        )}
+
+          <Modal
+            open={createProjectModalOpen}
+            onClose={closeCreateProjectModal}
+            title="Create project"
+          >
+            <form
+              className="org-create-project-form"
+              onSubmit={handleCreateProject}
+            >
+              <div className="form-field">
+                <label htmlFor="project-name">Name</label>
+                <input
+                  id="project-name"
+                  type="text"
+                  placeholder="Project name"
+                  value={projectName}
+                  onChange={(event) => setProjectName(event.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="project-key">Key</label>
+                <input
+                  id="project-key"
+                  type="text"
+                  placeholder="e.g. WEB"
+                  value={projectKey}
+                  onChange={(event) => setProjectKey(event.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="project-description">Description</label>
+                <input
+                  id="project-description"
+                  type="text"
+                  placeholder="What is this project about?"
+                  value={projectDescription}
+                  onChange={(event) =>
+                    setProjectDescription(event.target.value)
+                  }
+                  required
+                />
+              </div>
+
+              {createProjectError && (
+                <Alert variant="error">{createProjectError}</Alert>
+              )}
+
+              <button type="submit" disabled={creatingProject}>
+                {creatingProject ? "Creating..." : "Create project"}
+              </button>
+            </form>
+          </Modal>
+
+          {projectsLoading && (
+            <p className="org-detail__status">Loading projects...</p>
+          )}
+          {!projectsLoading && projectsError && (
+            <Alert variant="error">{projectsError}</Alert>
+          )}
+          {!projectsLoading && !projectsError && projects.length === 0 && (
+            <p className="org-detail__status">No projects yet.</p>
+          )}
+
+          {!projectsLoading && !projectsError && projects.length > 0 && (
+            <div className="project-card-grid">
+              {projects.map((project) => (
+                <Link
+                  key={project.id}
+                  to={`/organizations/${organization.id}/projects/${project.id}`}
+                  className="project-card"
+                >
+                  <div className="project-card__header">
+                    <span className="project-card__name">{project.name}</span>
+                    <span className="project-card__key">{project.key}</span>
+                  </div>
+                  <p className="project-card__description">
+                    {project.description}
+                  </p>
+                  <div className="project-card__footer">
+                    <span
+                      className={`status-badge status-badge--${project.status.toLowerCase()}`}
+                    >
+                      {project.status}
+                    </span>
+                    <span className="project-card__meta">
+                      {project.members?.length ?? 0} member(s)
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* )} */}
       </div>
 
       <aside className="org-detail__members">

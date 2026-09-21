@@ -46,9 +46,17 @@ export class ProjectService {
     });
   }
 
-  async getAllProjectsInOrganizations(organizationId: string) {
+  async getAllProjectsInOrganizations(
+    organizationId: string,
+    currentuser: CurrentUserDto,
+  ) {
     return this.projectRepository.find({
-      where: { organizationId: organizationId },
+      where: {
+        organizationId: organizationId,
+        members: {
+          userId: currentuser.sub,
+        },
+      },
       relations: {
         members: {},
       },

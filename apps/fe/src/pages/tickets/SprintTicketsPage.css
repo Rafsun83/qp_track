@@ -110,20 +110,19 @@
   -webkit-box-orient: vertical;
 }
 
-.ticket-card__controls {
+/* Wraps every inline quick-edit control so one stopPropagation on the
+   parent keeps all of them (status, priority, assignee) from also
+   triggering the card's own click-to-open-modal handler. */
+.ticket-card__quick-actions {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   cursor: default;
 }
 
-.ticket-card__footer {
+.ticket-card__controls {
   display: flex;
-  justify-content: flex-end;
-}
-
-.ticket-card__assignee {
-  font-size: 12px;
-  color: var(--text);
+  gap: 8px;
 }
 
 /* Status/priority are shown as colored selects so the same control both
@@ -131,7 +130,9 @@
    without needing to open the ticket. Colors carry meaning consistently:
    priority reads as an escalating scale (grey -> blue -> amber -> red),
    status reads as workflow stage (not started -> in flight -> needs
-   attention -> done/stopped/paused). */
+   attention -> done/stopped/paused). Assignee uses the app's accent color
+   instead - it's an identity, not a status, so it shouldn't borrow
+   semantics from the traffic-light palette. */
 .ticket-select {
   font: inherit;
   font-size: 12px;
@@ -211,6 +212,13 @@
   background: var(--danger-bg);
   color: var(--danger);
   border-color: var(--danger-border);
+}
+
+.ticket-select--assignee {
+  align-self: flex-start;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent-border);
 }
 
 .ticket-form__textarea {

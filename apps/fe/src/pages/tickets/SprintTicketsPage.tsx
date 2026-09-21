@@ -9,7 +9,7 @@ import {
   getTicketsForSprint,
   updateTicket,
 } from "../../api/tickets";
-import { getUserById } from "../../api/users";
+import { getUserById, searchUsersByUserName } from "../../api/users";
 import { useAuth } from "../../auth/AuthContext";
 import { Alert } from "../../components/ui/Alert";
 import { Modal } from "../../components/ui/Modal";
@@ -65,6 +65,11 @@ export function SprintTicketsPage() {
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<TicketStatus>("TODO");
   const [priority, setPriority] = useState<TicketPriority>("LOW");
+  // Reassignment only applies to an existing ticket (creation always assigns
+  // the creator server-side), so this is only read/rendered while editing.
+  const [assigneeQuery, setAssigneeQuery] = useState("");
+  const [assigneeResults, setAssigneeResults] = useState<User[]>([]);
+  const [selectedAssignee, setSelectedAssignee] = useState<User | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -124,7 +129,9 @@ export function SprintTicketsPage() {
     loadTickets();
   }, [loadTickets]);
 
-  // Resolve display names for any creator/assignee ids we don't have cached yet.
+  // Resolve display names for any creator/assignee/project-member ids we
+  // don't have cached yet - project members double as the reassignment
+  // candidates shown on each ticket card, so they need names too.
   useEffect(() => {
     if (!token) return;
     const ids = new Set<string>();
@@ -132,6 +139,7 @@ export function SprintTicketsPage() {
       ids.add(ticket.createdBy);
       if (ticket.assigneeId) ids.add(ticket.assigneeId);
     });
+    project?.members?.forEach((member) => ids.add(member.userId));
     const missing = [...ids].filter((id) => !(id in users));
     if (missing.length === 0) return;
 
@@ -154,7 +162,38 @@ export function SprintTicketsPage() {
     return () => {
       cancelled = true;
     };
-  }, [token, tickets, users]);
+  }, [token, tickets, users, project]);
+
+  // Debounced username search for reassignment - same pattern as adding an
+  // org/project member.
+  useEffect(() => {
+    if (
+      !token ||
+      !formModalOpen ||
+      !editingTicketId ||
+      selectedAssignee ||
+      assigneeQuery.trim().length === 0
+    ) {
+      setAssigneeResults([]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      searchUsersByUserName(token, assigneeQuery.trim())
+        .then((results) => {
+          if (!cancelled) setAssigneeResults(results);
+        })
+        .catch(() => {
+          if (!cancelled) setAssigneeResults([]);
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [token, formModalOpen, editingTicketId, assigneeQuery, selectedAssignee]);
 
   const projectMembership = project?.members?.find(
     (member) => member.userId === userId,
@@ -176,6 +215,9 @@ export function SprintTicketsPage() {
     setDescription("");
     setStatus("TODO");
     setPriority("LOW");
+    setAssigneeQuery("");
+    setAssigneeResults([]);
+    setSelectedAssignee(null);
     setFormError(null);
     setFormModalOpen(true);
   }
@@ -186,6 +228,13 @@ export function SprintTicketsPage() {
     setDescription(ticket.description);
     setStatus(ticket.status);
     setPriority(ticket.priority);
+    setAssigneeQuery("");
+    setAssigneeResults([]);
+    // Pre-fill with the current assignee (if we've already resolved their
+    // name) so the field reads as "currently assigned to X" until changed.
+    setSelectedAssignee(
+      ticket.assigneeId ? users[ticket.assigneeId] ?? null : null,
+    );
     setFormError(null);
     setFormModalOpen(true);
   }
@@ -202,11 +251,21 @@ export function SprintTicketsPage() {
     setFormError(null);
     setSaving(true);
     try {
-      const payload = { title, description, status, priority };
       if (editingTicketId) {
-        await updateTicket(token, projectId, sprintId, editingTicketId, payload);
+        await updateTicket(token, projectId, sprintId, editingTicketId, {
+          title,
+          description,
+          status,
+          priority,
+          ...(selectedAssignee ? { assigneeId: selectedAssignee.id } : {}),
+        });
       } else {
-        await createTicket(token, projectId, sprintId, payload);
+        await createTicket(token, projectId, sprintId, {
+          title,
+          description,
+          status,
+          priority,
+        });
       }
       setFormModalOpen(false);
       loadTickets();
@@ -221,7 +280,9 @@ export function SprintTicketsPage() {
 
   async function handleQuickUpdate(
     ticket: Ticket,
-    patch: Partial<Pick<Ticket, "status" | "priority">>,
+    patch: Partial<Pick<Ticket, "status" | "priority">> & {
+      assigneeId?: string;
+    },
   ) {
     if (!token || !projectId || !sprintId) return;
 
@@ -374,48 +435,65 @@ export function SprintTicketsPage() {
                 </p>
 
                 <div
-                  className="ticket-card__controls"
+                  className="ticket-card__quick-actions"
                   onClick={(event) => event.stopPropagation()}
                 >
+                  <div className="ticket-card__controls">
+                    <select
+                      className={`ticket-select ticket-select--status ticket-select--status-${ticket.status.toLowerCase()}`}
+                      value={ticket.status}
+                      disabled={!canManageTickets || isBusy}
+                      onChange={(event) =>
+                        handleQuickUpdate(ticket, {
+                          status: event.target.value as TicketStatus,
+                        })
+                      }
+                    >
+                      {STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {formatEnumLabel(option)}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      className={`ticket-select ticket-select--priority ticket-select--priority-${ticket.priority.toLowerCase()}`}
+                      value={ticket.priority}
+                      disabled={!canManageTickets || isBusy}
+                      onChange={(event) =>
+                        handleQuickUpdate(ticket, {
+                          priority: event.target.value as TicketPriority,
+                        })
+                      }
+                    >
+                      {PRIORITY_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {formatEnumLabel(option)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Assignee options are scoped to project members - anyone
+                      who can be handed a ticket already has a project_members
+                      row, so this stays a bounded dropdown like status/priority
+                      instead of a free-text user search. */}
                   <select
-                    className={`ticket-select ticket-select--status ticket-select--status-${ticket.status.toLowerCase()}`}
-                    value={ticket.status}
+                    className="ticket-select ticket-select--assignee"
+                    value={ticket.assigneeId ?? ""}
                     disabled={!canManageTickets || isBusy}
                     onChange={(event) =>
                       handleQuickUpdate(ticket, {
-                        status: event.target.value as TicketStatus,
+                        assigneeId: event.target.value,
                       })
                     }
                   >
-                    {STATUS_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {formatEnumLabel(option)}
+                    {(project.members ?? []).map((member) => (
+                      <option key={member.userId} value={member.userId}>
+                        {nameFor(member.userId)}
                       </option>
                     ))}
                   </select>
-
-                  <select
-                    className={`ticket-select ticket-select--priority ticket-select--priority-${ticket.priority.toLowerCase()}`}
-                    value={ticket.priority}
-                    disabled={!canManageTickets || isBusy}
-                    onChange={(event) =>
-                      handleQuickUpdate(ticket, {
-                        priority: event.target.value as TicketPriority,
-                      })
-                    }
-                  >
-                    {PRIORITY_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {formatEnumLabel(option)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="ticket-card__footer">
-                  <span className="ticket-card__assignee">
-                    {nameFor(ticket.assigneeId)}
-                  </span>
                 </div>
               </div>
             );
@@ -491,10 +569,45 @@ export function SprintTicketsPage() {
             </div>
           </div>
 
+          {editingTicketId && (
+            <div className="form-field">
+              <label htmlFor="ticket-assignee">Assignee</label>
+              <input
+                id="ticket-assignee"
+                type="text"
+                placeholder="Search by username"
+                value={
+                  selectedAssignee ? selectedAssignee.userName : assigneeQuery
+                }
+                onChange={(event) => {
+                  setSelectedAssignee(null);
+                  setAssigneeQuery(event.target.value);
+                }}
+                autoComplete="off"
+              />
+              {assigneeResults.length > 0 && (
+                <ul className="project-user-suggestions">
+                  {assigneeResults.map((candidate) => (
+                    <li key={candidate.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedAssignee(candidate);
+                          setAssigneeResults([]);
+                        }}
+                      >
+                        {candidate.userName} ({candidate.name})
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           {editingTicket && (
             <p className="ticket-form__meta">
-              Created by {nameFor(editingTicket.createdBy)} · Assigned to{" "}
-              {nameFor(editingTicket.assigneeId)} ·{" "}
+              Created by {nameFor(editingTicket.createdBy)} ·{" "}
               {new Date(editingTicket.createdAt).toLocaleString()}
             </p>
           )}

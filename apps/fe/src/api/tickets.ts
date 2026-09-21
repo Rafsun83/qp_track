@@ -38,6 +38,7 @@ export interface UpdateTicketPayload {
   description?: string;
   status?: TicketStatus;
   priority?: TicketPriority;
+  assigneeId?: string;
 }
 
 /** PUT /api/project/:projectId/sprint/:sprintId/ticket/:ticketId - requires project membership (LEAD or CONTRIBUTOR). */
