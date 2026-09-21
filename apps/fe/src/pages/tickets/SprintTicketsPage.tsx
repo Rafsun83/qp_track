@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
+import {
+  createComment,
+  deleteComment,
+  getCommentsForTicket,
+  updateComment,
+} from "../../api/comments";
 import { getProjectById } from "../../api/projects";
 import { getSprintById } from "../../api/sprints";
 import {
@@ -13,6 +19,7 @@ import { getUserById, searchUsersByUserName } from "../../api/users";
 import { useAuth } from "../../auth/AuthContext";
 import { Alert } from "../../components/ui/Alert";
 import { Modal } from "../../components/ui/Modal";
+import type { Comment } from "../../types/comment";
 import type { Project } from "../../types/project";
 import type { Sprint } from "../../types/sprint";
 import type { Ticket, TicketPriority, TicketStatus } from "../../types/ticket";
@@ -87,6 +94,27 @@ export function SprintTicketsPage() {
     null,
   );
 
+  // Comments are only meaningful for a saved ticket, so this is only
+  // populated/rendered while the form modal is in "edit" mode.
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
+
+  const [newComment, setNewComment] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
+  const [postCommentError, setPostCommentError] = useState<string | null>(
+    null,
+  );
+
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(
+    null,
+  );
+  const [editingCommentText, setEditingCommentText] = useState("");
+  const [commentBusyId, setCommentBusyId] = useState<string | null>(null);
+  const [commentActionError, setCommentActionError] = useState<string | null>(
+    null,
+  );
+
   const loadContext = useCallback(() => {
     if (!token || !organizationId || !projectId || !sprintId) return;
     setLoading(true);
@@ -129,9 +157,9 @@ export function SprintTicketsPage() {
     loadTickets();
   }, [loadTickets]);
 
-  // Resolve display names for any creator/assignee/project-member ids we
-  // don't have cached yet - project members double as the reassignment
-  // candidates shown on each ticket card, so they need names too.
+  // Resolve display names for any creator/assignee/project-member/comment-
+  // author ids we don't have cached yet - project members double as the
+  // reassignment candidates shown on each ticket card, so they need names too.
   useEffect(() => {
     if (!token) return;
     const ids = new Set<string>();
@@ -140,6 +168,7 @@ export function SprintTicketsPage() {
       if (ticket.assigneeId) ids.add(ticket.assigneeId);
     });
     project?.members?.forEach((member) => ids.add(member.userId));
+    comments.forEach((comment) => ids.add(comment.userId));
     const missing = [...ids].filter((id) => !(id in users));
     if (missing.length === 0) return;
 
@@ -162,7 +191,7 @@ export function SprintTicketsPage() {
     return () => {
       cancelled = true;
     };
-  }, [token, tickets, users, project]);
+  }, [token, tickets, users, project, comments]);
 
   // Debounced username search for reassignment - same pattern as adding an
   // org/project member.
@@ -209,6 +238,30 @@ export function SprintTicketsPage() {
     return users[id]?.name ?? id;
   }
 
+  function loadComments(ticketId: string) {
+    if (!token || !projectId || !sprintId) return;
+    setCommentsLoading(true);
+    setCommentsError(null);
+    getCommentsForTicket(token, projectId, sprintId, ticketId)
+      .then(setComments)
+      .catch((err) =>
+        setCommentsError(
+          err instanceof Error ? err.message : "Failed to load comments.",
+        ),
+      )
+      .finally(() => setCommentsLoading(false));
+  }
+
+  function resetCommentState() {
+    setComments([]);
+    setCommentsError(null);
+    setNewComment("");
+    setPostCommentError(null);
+    setEditingCommentId(null);
+    setEditingCommentText("");
+    setCommentActionError(null);
+  }
+
   function openCreateModal() {
     setEditingTicketId(null);
     setTitle("");
@@ -219,6 +272,7 @@ export function SprintTicketsPage() {
     setAssigneeResults([]);
     setSelectedAssignee(null);
     setFormError(null);
+    resetCommentState();
     setFormModalOpen(true);
   }
 
@@ -236,6 +290,8 @@ export function SprintTicketsPage() {
       ticket.assigneeId ? users[ticket.assigneeId] ?? null : null,
     );
     setFormError(null);
+    resetCommentState();
+    loadComments(ticket.id);
     setFormModalOpen(true);
   }
 
@@ -328,6 +384,100 @@ export function SprintTicketsPage() {
       );
     } finally {
       setDeletingTicket(false);
+    }
+  }
+
+  async function handlePostComment() {
+    if (
+      !token ||
+      !projectId ||
+      !sprintId ||
+      !editingTicketId ||
+      !newComment.trim()
+    )
+      return;
+
+    setPostCommentError(null);
+    setPostingComment(true);
+    try {
+      const created = await createComment(
+        token,
+        projectId,
+        sprintId,
+        editingTicketId,
+        { comment: newComment.trim() },
+      );
+      setComments((prev) => [...prev, created]);
+      setNewComment("");
+    } catch (err) {
+      setPostCommentError(
+        err instanceof ApiError ? err.message : "Failed to post comment.",
+      );
+    } finally {
+      setPostingComment(false);
+    }
+  }
+
+  function startEditComment(comment: Comment) {
+    setEditingCommentId(comment.id);
+    setEditingCommentText(comment.comment);
+    setCommentActionError(null);
+  }
+
+  function cancelEditComment() {
+    setEditingCommentId(null);
+    setEditingCommentText("");
+  }
+
+  async function handleSaveComment(commentId: string) {
+    if (
+      !token ||
+      !projectId ||
+      !sprintId ||
+      !editingTicketId ||
+      !editingCommentText.trim()
+    )
+      return;
+
+    setCommentActionError(null);
+    setCommentBusyId(commentId);
+    try {
+      const updated = await updateComment(
+        token,
+        projectId,
+        sprintId,
+        editingTicketId,
+        commentId,
+        { comment: editingCommentText.trim() },
+      );
+      setComments((prev) =>
+        prev.map((item) => (item.id === commentId ? updated : item)),
+      );
+      setEditingCommentId(null);
+      setEditingCommentText("");
+    } catch (err) {
+      setCommentActionError(
+        err instanceof ApiError ? err.message : "Failed to update comment.",
+      );
+    } finally {
+      setCommentBusyId(null);
+    }
+  }
+
+  async function handleDeleteComment(commentId: string) {
+    if (!token || !projectId || !sprintId || !editingTicketId) return;
+
+    setCommentActionError(null);
+    setCommentBusyId(commentId);
+    try {
+      await deleteComment(token, projectId, sprintId, editingTicketId, commentId);
+      setComments((prev) => prev.filter((item) => item.id !== commentId));
+    } catch (err) {
+      setCommentActionError(
+        err instanceof ApiError ? err.message : "Failed to delete comment.",
+      );
+    } finally {
+      setCommentBusyId(null);
     }
   }
 
@@ -640,6 +790,128 @@ export function SprintTicketsPage() {
             )}
           </div>
         </form>
+
+        {editingTicketId && (
+          <div className="ticket-comments">
+            <h3 className="ticket-comments__title">Comments</h3>
+
+            {commentsLoading && (
+              <p className="sprint-tickets__status">Loading comments...</p>
+            )}
+            {!commentsLoading && commentsError && (
+              <Alert variant="error">{commentsError}</Alert>
+            )}
+            {!commentsLoading && !commentsError && comments.length === 0 && (
+              <p className="ticket-comments__empty">No comments yet.</p>
+            )}
+
+            {!commentsLoading && !commentsError && comments.length > 0 && (
+              <ul className="ticket-comments__list">
+                {comments.map((item) => {
+                  const isAuthor = item.userId === userId;
+                  const isEditingThis = editingCommentId === item.id;
+                  const isBusy = commentBusyId === item.id;
+
+                  return (
+                    <li key={item.id} className="ticket-comments__item">
+                      <div className="ticket-comments__meta">
+                        <span className="ticket-comments__author">
+                          {nameFor(item.userId)}
+                        </span>
+                        <span className="ticket-comments__time">
+                          {new Date(item.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+
+                      {isEditingThis ? (
+                        <div className="ticket-comments__edit">
+                          <textarea
+                            className="ticket-form__textarea"
+                            value={editingCommentText}
+                            onChange={(event) =>
+                              setEditingCommentText(event.target.value)
+                            }
+                            rows={2}
+                            autoFocus
+                          />
+                          <div className="ticket-comments__edit-actions">
+                            <button
+                              type="button"
+                              className="ticket-comments__save-btn"
+                              disabled={isBusy || !editingCommentText.trim()}
+                              onClick={() => handleSaveComment(item.id)}
+                            >
+                              {isBusy ? "Saving..." : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              className="ticket-comments__cancel-btn"
+                              disabled={isBusy}
+                              onClick={cancelEditComment}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="ticket-comments__text">
+                            {item.comment}
+                          </p>
+                          {isAuthor && (
+                            <div className="ticket-comments__actions">
+                              <button
+                                type="button"
+                                className="ticket-comments__edit-btn"
+                                disabled={isBusy}
+                                onClick={() => startEditComment(item)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="ticket-comments__delete-btn"
+                                disabled={isBusy}
+                                onClick={() => handleDeleteComment(item.id)}
+                              >
+                                {isBusy ? "Deleting..." : "Delete"}
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {commentActionError && (
+              <Alert variant="error">{commentActionError}</Alert>
+            )}
+
+            <div className="ticket-comments__compose">
+              <textarea
+                className="ticket-form__textarea"
+                placeholder="Write a comment..."
+                value={newComment}
+                onChange={(event) => setNewComment(event.target.value)}
+                rows={2}
+              />
+              {postCommentError && (
+                <Alert variant="error">{postCommentError}</Alert>
+              )}
+              <button
+                type="button"
+                className="ticket-comments__post-btn"
+                disabled={postingComment || !newComment.trim()}
+                onClick={handlePostComment}
+              >
+                {postingComment ? "Posting..." : "Post comment"}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Modal

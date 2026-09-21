@@ -20,3 +20,5 @@ You will modify my project follow the instructions:-
 9. Sprint card will be clickable, After click show tickets card page where show all ticket cards, I have already added tickets APi's in API Guide file.
 
 10. Then, user can create Ticket, update ticket, delete ticket, even when click above ticket card ticket all information show in the modal, and there user can update ticket like change the status or priority or description or title, event in ticket card above user can change ticket status and priority also. And every action color will be understandable as user can understand properly.
+
+11. I have added comments API in API_GUIDE.md file. User can use those api post comment, update, delete and get. now You implement it in ticket details page.
