@@ -7,6 +7,7 @@ import appConfig from './config/app.config.js';
 import databaseConfig from './config/database.config.js';
 import { ApiKeyModule } from './modules/apiKey/api-key.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { CommentsModule } from './modules/comments/comments.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { OrganizationMembersModule } from './modules/organization_members/organization_member.module.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
@@ -64,6 +65,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ProjectMemberModule,
     SprintModule,
     TicketsModule,
+    CommentsModule,
 
     WebhookModules,
     AuthModule,

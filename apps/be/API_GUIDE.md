@@ -1203,6 +1203,152 @@ curl -X DELETE http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-..
 
 ---
 
+## Comments
+
+Route prefix is `/api/project/:projectId/sprint/:sprintId/ticket/:ticketId/comment...` — comments belong to a ticket, one level deeper than tickets themselves. The DB foreign key from `comments` to `tickets` is `ON DELETE CASCADE`, so deleting a ticket deletes its comments.
+
+No `@Roles(...)` on any of these routes (no `:organizationId` param to key one off). `CommentService` does its own manual checks, and unlike Sprints/Tickets, **write access here is author-based, not project-role-based**:
+
+- The caller must have a `project_members` row for `:projectId` at all, or every route below responds `403 Forbidden, "You are not a member of this project"`.
+- `POST` and both `GET`s only require membership — **any role, including `VIEWER`, can post and read comments** (commenting is collaborative, not a management action, unlike creating/editing a ticket).
+- `PUT` and `DELETE` additionally require the caller to be the comment's own author (`comment.userId === caller`) — `403 Forbidden` otherwise, regardless of the caller's project role. A project `LEAD` cannot edit or delete another member's comment through these routes; there's no moderator override.
+- On every route, `:ticketId` is additionally verified to belong to `{ :projectId, :sprintId }` (`404 Not Found, "Ticket not found"` otherwise) — same pattern as tickets verifying their sprint.
+
+Single-comment routes (`GET`/`PUT`/`DELETE .../comment/:commentId`) are scoped to `{ id: commentId, ticketId }` — a `commentId` that exists but on a different ticket 404s instead of leaking across tickets.
+
+### `POST /api/project/:projectId/sprint/:sprintId/ticket/:ticketId/comment`
+
+**Requires auth + project membership** (any role).
+
+**Body (`CreateCommentDto`):**
+
+| Field     | Type   | Rules                 |
+|-----------|--------|------------------------|
+| `comment` | string | required, non-empty  |
+
+`userId` is not a body field — it's taken from the caller's JWT, the same way `createdBy`/`assigneeId` are on ticket creation.
+
+**Success — `201 Created`:**
+
+```json
+{
+  "comment": "Reproduced this on staging too.",
+  "ticketId": "c7de719b-ed89-4396-9483-287e1c0e06f3",
+  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "id": "2ba7107c-2685-451a-ad2d-89e875758907",
+  "createdAt": "2026-09-21T11:57:19.590Z",
+  "updatedAt": "2026-09-21T11:57:19.590Z"
+}
+```
+
+**Failure:**
+- `400 Bad Request` — missing/empty `comment`, or an unknown field (e.g. `userId` in the body is rejected outright by the global `whitelist`/`forbidNonWhitelisted` pipe).
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`.
+- `404 Not Found` — `:ticketId` doesn't belong to `{ :projectId, :sprintId }`.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c7de719b-.../comment \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"comment": "Reproduced this on staging too."}'
+```
+
+---
+
+### `GET /api/project/:projectId/sprint/:sprintId/ticket/:ticketId/comment`
+
+**Requires auth + project membership** (any role).
+
+**Success — `200 OK`:** an array of every comment on that ticket, oldest first (`ORDER BY created_at ASC`, so it reads top-to-bottom like a discussion thread). An empty array `[]` if there are none.
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`.
+- `404 Not Found` — `:ticketId` doesn't belong to `{ :projectId, :sprintId }`.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c7de719b-.../comment \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### `GET /api/project/:projectId/sprint/:sprintId/ticket/:ticketId/comment/:commentId`
+
+**Requires auth + project membership** (any role).
+
+**Success — `200 OK`:** the comment row (same shape as the create response).
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`.
+- `404 Not Found` — `:ticketId` doesn't belong to `{ :projectId, :sprintId }`, or no comment with that `commentId` exists on this ticket.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c7de719b-.../comment/2ba7107c-... \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### `PUT /api/project/:projectId/sprint/:sprintId/ticket/:ticketId/comment/:commentId`
+
+**Requires auth + comment authorship.** Project membership alone is not enough — the caller must be this comment's own `userId`, checked in `CommentService` (not `RolesGuard`).
+
+**Body (`UpdateCommentDto`):**
+
+| Field     | Type   | Rules                 |
+|-----------|--------|------------------------|
+| `comment` | string | required, non-empty  |
+
+**Success — `200 OK`:** the updated comment row.
+
+**Failure:**
+- `400 Bad Request` — missing/empty `comment`, or an unknown field.
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`, or is a member but not this comment's author (`"Only the comment author can update this comment"`).
+- `404 Not Found` — `:ticketId` doesn't belong to `{ :projectId, :sprintId }`, or no comment with that `commentId` exists on this ticket.
+
+**Example:**
+
+```bash
+curl -X PUT http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c7de719b-.../comment/2ba7107c-... \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"comment": "Updated comment text"}'
+```
+
+---
+
+### `DELETE /api/project/:projectId/sprint/:sprintId/ticket/:ticketId/comment/:commentId`
+
+**Requires auth + comment authorship** (same rule as `PUT` — the caller must be this comment's author, not just any project member, and not even the project `LEAD`).
+
+No body.
+
+**Success — `200 OK`:** empty body.
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`, or is a member but not this comment's author (`"Only the comment author can delete this comment"`).
+- `404 Not Found` — `:ticketId` doesn't belong to `{ :projectId, :sprintId }`, or no comment with that `commentId` exists on this ticket.
+
+**Example:**
+
+```bash
+curl -X DELETE http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c7de719b-.../comment/2ba7107c-... \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 ## `POST /webhook/response`
 
 **API key only** — same auth model as `GET /api/users/:id`: excluded from the global `AuthGuard`, protected instead by `ApiKeyGuard` via an `x-api-key` header (get one from `POST /api-key`). No JWT accepted.
