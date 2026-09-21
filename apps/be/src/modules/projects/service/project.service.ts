@@ -1,7 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { CurrentUserDto } from '../../auth/dto/current-user.dto.js';
 import { ProjectMember } from '../../project_members/entity/project-member.entity.js';
+import { ProjectRole } from '../../project_members/enum/project-role.enum.js';
 import { craeteProjectDto } from '../dto/project-create.dto.js';
 import { UpdateProjectDto } from '../dto/project-update.dto.js';
 import { Project } from '../entity/project.entity.js';
@@ -78,12 +84,22 @@ export class ProjectService {
     return this.projectRepository.save(project);
   }
 
-  async deleteIndividualProject(organizationId: string, id: string) {
-    const result = await this.projectRepository.delete({
-      organizationId,
-      id,
-    });
+  async deleteIndividualProject(
+    organizationId: string,
+    id: string,
+    user: CurrentUserDto,
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const memberRole = await manager.findOne(ProjectMember, {
+        where: { projectId: id, userId: user.sub },
+      });
+      if (memberRole?.role !== ProjectRole.LEAD) {
+        throw new ForbiddenException(
+          'You do not have access to delete this project!!',
+        );
+      }
 
-    return result;
+      await manager.delete(Project, { organizationId, id });
+    });
   }
 }

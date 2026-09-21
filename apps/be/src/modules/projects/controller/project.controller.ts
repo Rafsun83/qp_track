@@ -69,7 +69,12 @@ export class ProjectController {
   deleteProject(
     @Param('organizationId') organizationId: string,
     @Param('id') id: string,
+    @CurrentUser() user: CurrentUserDto,
   ) {
-    return this.projectService.deleteIndividualProject(organizationId, id);
+    return this.projectService.deleteIndividualProject(
+      organizationId,
+      id,
+      user,
+    );
   }
 }

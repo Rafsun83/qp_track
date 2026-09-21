@@ -726,21 +726,15 @@ curl -X PATCH http://localhost:3001/api/organization/b1a2c3d4-.../project/5c2b1f
 
 ### `DELETE /api/organization/:organizationId/project/:id`
 
-**Requires auth + role.** `@Roles(OrganizationRole.OWNER)` — **`OWNER` only**.
+**Requires auth + role, plus a project-level check.** `@Roles(OrganizationRole.OWNER)` gates the route at the organization level — **`OWNER` only**. On top of that, the service (`deleteIndividualProject`) now runs in a transaction and separately looks up the caller's own `project_members` row for *this specific project* (`{ projectId: id, userId: user.sub }`); the delete only proceeds if that row's `role` is `ProjectRole.LEAD`, otherwise it throws `403 Forbidden`. This check is scoped per-project — being `LEAD` on some other project no longer counts (an earlier version of this check queried by `userId` alone, so `LEAD` on *any* project was enough to delete *any other* project; that cross-project bug is fixed).
 
-No body. Unlike the project-member delete below (or the organization-member deletes), the service (`deleteIndividualProject`) does **not** check `result.affected` — it deletes scoped to `{ organizationId, id }` (properly scoped, unlike the `PATCH` above) and returns the raw TypeORM delete result either way.
+No body. The delete itself runs via `manager.delete(Project, { organizationId, id })` inside the same transaction, scoped to `{ organizationId, id }` (properly scoped, unlike the `PATCH` above). Unlike before, the handler no longer returns the TypeORM delete result at all — there's still no `404 Not Found` to distinguish "deleted" from "nothing matched," but now that ambiguity is silent rather than surfaced via `affected`.
 
-**Success — `200 OK`:** always, even if nothing matched:
-
-```json
-{ "raw": [], "affected": 0 }
-```
-
-`affected: 1` means a project was actually deleted; `affected: 0` silently means no project matched that `(organizationId, id)` pair — there's no `404 Not Found` to distinguish "deleted" from "nothing there."
+**Success — `200 OK`:** empty body.
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
-- `403 Forbidden` — caller is not a member of the organization, or is a member but not the `OWNER`.
+- `403 Forbidden` — caller is not a member of the organization, is a member but not the `OWNER`, or (new) does not hold `LEAD` in this project's `project_members` (including when the caller has no membership row on the project at all).
 
 **Example:**
 
@@ -753,7 +747,7 @@ curl -X DELETE http://localhost:3001/api/organization/b1a2c3d4-.../project/5c2b1
 
 ## Project Members
 
-Route prefix is singular here too — `/api/project/:projectId/member...`. None of these three routes currently carry `@Roles(...)` (it's commented out in source on the `POST`, and simply absent on the other two), and — per the [Role-based authorization](#role-based-authorization-organization-endpoints) note above — these routes have no `:organizationId` param to key off of even if `@Roles(...)` were added as-is. So today, **any authenticated user can add, remove, or change the role of a member on any project**, regardless of organization or project membership.
+Route prefix is singular here too — `/api/project/:projectId/member...`. None of these three routes currently carry `@Roles(...)` (it's commented out in source on the `POST`, and simply absent on the other two), and — per the [Role-based authorization](#role-based-authorization-organization-endpoints) note above — these routes have no `:organizationId` param to key off of even if `@Roles(...)` were added as-is. So today, **any authenticated user can add or change the role of a member on any project**, regardless of organization or project membership. The one exception is `DELETE` below, which now enforces a project-level check by hand (not via `@Roles`/`RolesGuard`): only a caller who is the target project's `LEAD` can remove a member.
 
 ### `POST /api/project/:projectId/member`
 
@@ -798,7 +792,7 @@ curl -X POST http://localhost:3001/api/project/5c2b1f4a-.../member \
 
 ### `DELETE /api/project/:projectId/member/:userId`
 
-**Requires auth (JWT) only.**
+**Requires auth (JWT), plus a project-level check.** No `@Roles(...)` (there's no `:organizationId` param here to key one off), but the service (`removeProjectMember`) now looks up the caller's own `project_members` row for `:projectId` first — if it doesn't exist or its `role` isn't `ProjectRole.LEAD`, the request is rejected with `403 Forbidden` before anything is deleted. Only the project's `LEAD` can remove members through this route.
 
 No body. Deletes scoped to `{ projectId, userId }` and, unlike the project `DELETE` above, does check `result.affected`.
 
@@ -806,6 +800,7 @@ No body. Deletes scoped to `{ projectId, userId }` and, unlike the project `DELE
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller has no `project_members` row on `:projectId`, or holds a role other than `LEAD` there.
 - `404 Not Found` — no member with that `userId` exists on this project.
 
 **Example:**

@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -33,7 +34,21 @@ export class ProjectMemberService {
     return this.projectMemberRepository.save({ projectId, role, userId });
   }
 
-  async removeProjectMember(projectId: string, userId: string) {
+  async removeProjectMember(
+    projectId: string,
+    userId: string,
+    currentUserId: string,
+  ) {
+    const requester = await this.projectMemberRepository.findOne({
+      where: { projectId, userId: currentUserId },
+    });
+
+    if (requester?.role !== ProjectRole.LEAD) {
+      throw new ForbiddenException(
+        'Only the project LEAD can remove members!!',
+      );
+    }
+
     const result = await this.projectMemberRepository.delete({
       projectId,
       userId,
