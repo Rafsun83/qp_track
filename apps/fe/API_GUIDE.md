@@ -879,6 +879,174 @@ curl -X PATCH http://localhost:3001/api/project/5c2b1f4a-.../member/df7db73d-f04
 
 ---
 
+## Sprints
+
+Route prefix is `/api/project/:projectId/sprint...`, same style as the project-member routes above — no `:organizationId` param, so none of these routes carry `@Roles(...)` (see the [Role-based authorization](#role-based-authorization-organization-endpoints) note). Instead, every route does its own manual check in `SprintService`, keyed off the caller's `project_members` row for `:projectId`:
+
+- The caller must have a `project_members` row for `:projectId` at all, or every route below responds `403 Forbidden, "You are not a member of this project"`.
+- `POST` and `PUT` additionally require the caller's role on that row to be `LEAD` or `CONTRIBUTOR` (`VIEWER` is read-only) — otherwise `403 Forbidden`.
+- `DELETE` additionally requires `LEAD` specifically — `CONTRIBUTOR` can create/update sprints but not delete them.
+- `GET` (both routes) only requires membership — any role, including `VIEWER`, can read.
+
+Unlike `PATCH /api/organization/:organizationId/project/:id` above, the single-sprint routes (`GET`/`PUT`/`DELETE .../sprint/:sprintId`) are properly scoped to `{ id: sprintId, projectId }`, not looked up by `id` alone — a `sprintId` that belongs to a different project 404s instead of leaking across projects.
+
+### `POST /api/project/:projectId/sprint`
+
+**Requires auth + project membership** (`LEAD` or `CONTRIBUTOR` on `:projectId`, per above).
+
+**Body (`CreateSprintDto`):**
+
+| Field       | Type   | Rules                                                                                                                             |
+| ----------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `name`      | string | required, non-empty                                                                                                               |
+| `startDate` | string | required, ISO 8601 date string (`@IsDateString`)                                                                                  |
+| `endDate`   | string | required, ISO 8601 date string (`@IsDateString`)                                                                                  |
+| `status`    | string | optional, one of `PLANNED` / `ACTIVE` / `COMPLETED` / `CANCELLED` — defaults to `PLANNED` (the entity column default) if omitted |
+
+`startDate` must not be after `endDate`, or the request fails with `400 Bad Request, "startDate must be before endDate"` — checked in the service, not via a DTO validator.
+
+**Success — `201 Created`:** the created sprint row:
+
+```json
+{
+  "name": "Sprint 1",
+  "startDate": "2026-01-05T00:00:00.000Z",
+  "endDate": "2026-01-19T00:00:00.000Z",
+  "projectId": "5c2b1f4a-...",
+  "id": "9e1f7c3a-...",
+  "status": "PLANNED"
+}
+```
+
+**Failure:**
+
+- `400 Bad Request` — missing/empty `name`, an invalid `startDate`/`endDate`/`status`, `startDate` after `endDate`, or an unknown field.
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`, or is a member but only `VIEWER`.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3001/api/project/5c2b1f4a-.../sprint \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"name": "Sprint 1", "startDate": "2026-01-05T00:00:00.000Z", "endDate": "2026-01-19T00:00:00.000Z"}'
+```
+
+---
+
+### `GET /api/project/:projectId/sprint`
+
+**Requires auth + project membership** (any role).
+
+**Success — `200 OK`:** an array of every sprint on the project:
+
+```json
+[
+  {
+    "id": "9e1f7c3a-...",
+    "projectId": "5c2b1f4a-...",
+    "name": "Sprint 1",
+    "startDate": "2026-01-05T00:00:00.000Z",
+    "endDate": "2026-01-19T00:00:00.000Z",
+    "status": "PLANNED"
+  }
+]
+```
+
+**Failure:**
+
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/project/5c2b1f4a-.../sprint \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### `GET /api/project/:projectId/sprint/:sprintId`
+
+**Requires auth + project membership** (any role).
+
+**Success — `200 OK`:** the sprint row (same shape as the list endpoint above).
+
+**Failure:**
+
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`.
+- `404 Not Found` — no sprint with that `sprintId` exists on `:projectId` (including one that exists but belongs to a different project).
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-... \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### `PUT /api/project/:projectId/sprint/:sprintId`
+
+**Requires auth + project membership** (`LEAD` or `CONTRIBUTOR` on `:projectId`, per above).
+
+**Body (`UpdateSprintDto`, all fields optional):**
+
+| Field       | Type   | Rules                                                              |
+| ----------- | ------ | --------------------------------------------------------------------- |
+| `name`      | string | optional                                                               |
+| `startDate` | string | optional, ISO 8601 date string (`@IsDateString`)                       |
+| `endDate`   | string | optional, ISO 8601 date string (`@IsDateString`)                       |
+| `status`    | string | optional, one of `PLANNED` / `ACTIVE` / `COMPLETED` / `CANCELLED`     |
+
+Fields are merged onto the existing sprint (`Object.assign`), then the same `startDate <= endDate` check runs against the merged result — so sending only `endDate` can still 400 if it now falls before the sprint's existing `startDate`.
+
+**Success — `200 OK`:** the updated sprint row.
+
+**Failure:**
+
+- `400 Bad Request` — invalid `startDate`/`endDate`/`status`, the merged `startDate` after `endDate`, or an unknown field.
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`, or is a member but only `VIEWER`.
+- `404 Not Found` — no sprint with that `sprintId` exists on `:projectId`.
+
+**Example:**
+
+```bash
+curl -X PUT http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-... \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"status": "ACTIVE"}'
+```
+
+---
+
+### `DELETE /api/project/:projectId/sprint/:sprintId`
+
+**Requires auth + project membership** — `LEAD` specifically (per above; `CONTRIBUTOR` cannot delete).
+
+No body.
+
+**Success — `200 OK`:** empty body.
+
+**Failure:**
+
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`, or is a member but not `LEAD`.
+- `404 Not Found` — no sprint with that `sprintId` exists on `:projectId`.
+
+**Example:**
+
+```bash
+curl -X DELETE http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-... \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 ## `POST /webhook/response`
 
 **API key only** — same auth model as `GET /api/users/:id`: excluded from the global `AuthGuard`, protected instead by `ApiKeyGuard` via an `x-api-key` header (get one from `POST /api-key`). No JWT accepted.
