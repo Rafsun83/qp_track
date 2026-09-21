@@ -29,6 +29,17 @@ export function getSprintsForProject(
   return apiRequest<Sprint[]>(`/api/project/${projectId}/sprint`, { token });
 }
 
+/** GET /api/project/:projectId/sprint/:sprintId - requires project membership (any role). */
+export function getSprintById(
+  token: string,
+  projectId: string,
+  sprintId: string,
+): Promise<Sprint> {
+  return apiRequest<Sprint>(`/api/project/${projectId}/sprint/${sprintId}`, {
+    token,
+  });
+}
+
 export interface UpdateSprintPayload {
   name?: string;
   startDate?: string;

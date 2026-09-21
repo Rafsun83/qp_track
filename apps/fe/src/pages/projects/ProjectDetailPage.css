@@ -99,6 +99,22 @@
   border-radius: 6px;
 }
 
+/* The card opens the sprint's ticket board - signal that the same way the
+   project cards on the org page do (accent border on hover). */
+.sprint-card--clickable {
+  cursor: pointer;
+}
+
+.sprint-card--clickable:hover,
+.sprint-card--clickable:focus-visible {
+  border-color: var(--accent-border);
+}
+
+.sprint-card--clickable:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+
 .sprint-card__header {
   display: flex;
   justify-content: space-between;

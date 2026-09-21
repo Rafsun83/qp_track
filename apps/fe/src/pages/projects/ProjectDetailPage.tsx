@@ -26,6 +26,7 @@ import type { Organization } from "../../types/organization";
 import type { Project, ProjectRole, ProjectStatus } from "../../types/project";
 import type { Sprint, SprintStatus } from "../../types/sprint";
 import type { User } from "../../types/user";
+import { getSprintTiming } from "../../utils/sprintTiming";
 import "./ProjectDetailPage.css";
 
 const ASSIGNABLE_ROLES: ProjectRole[] = ["LEAD", "CONTRIBUTOR", "VIEWER"];
@@ -43,45 +44,6 @@ const SPRINT_STATUS_OPTIONS: SprintStatus[] = [
   "COMPLETED",
   "CANCELLED",
 ];
-
-const MS_PER_DAY = 86_400_000;
-
-/**
- * A sprint's `status` alone doesn't tell a reader *when* it sits relative to
- * today - two ACTIVE sprints with different end dates need to read
- * differently. This turns the dates + status into a short, unambiguous
- * "ends in 3 days" / "starts tomorrow" / "ended 2 days ago" label.
- */
-function getSprintTiming(sprint: Sprint, now: Date = new Date()) {
-  const start = new Date(sprint.startDate);
-  const end = new Date(sprint.endDate);
-
-  if (sprint.status === "CANCELLED") {
-    return { label: "Cancelled", tone: "ended" as const };
-  }
-  if (sprint.status === "COMPLETED") {
-    return { label: "Completed", tone: "ended" as const };
-  }
-  if (now < start) {
-    const days = Math.ceil((start.getTime() - now.getTime()) / MS_PER_DAY);
-    return {
-      label: days <= 1 ? "Starts tomorrow" : `Starts in ${days} days`,
-      tone: "upcoming" as const,
-    };
-  }
-  if (now > end) {
-    const days = Math.floor((now.getTime() - end.getTime()) / MS_PER_DAY);
-    return {
-      label: days <= 1 ? "Ended yesterday" : `Ended ${days} days ago`,
-      tone: "ended" as const,
-    };
-  }
-  const daysLeft = Math.ceil((end.getTime() - now.getTime()) / MS_PER_DAY);
-  return {
-    label: daysLeft <= 1 ? "Ends today" : `${daysLeft} days left`,
-    tone: "active" as const,
-  };
-}
 
 export function ProjectDetailPage() {
   const { organizationId, projectId } = useParams<{
@@ -559,7 +521,25 @@ export function ProjectDetailPage() {
               {sprints.map((sprint) => {
                 const timing = getSprintTiming(sprint);
                 return (
-                  <div key={sprint.id} className="sprint-card">
+                  <div
+                    key={sprint.id}
+                    className="sprint-card sprint-card--clickable"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() =>
+                      navigate(
+                        `/organizations/${organizationId}/projects/${projectId}/sprints/${sprint.id}`,
+                      )
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        navigate(
+                          `/organizations/${organizationId}/projects/${projectId}/sprints/${sprint.id}`,
+                        );
+                      }
+                    }}
+                  >
                     <div className="sprint-card__header">
                       <span className="sprint-card__name">{sprint.name}</span>
                       <span
@@ -590,7 +570,10 @@ export function ProjectDetailPage() {
                         <button
                           type="button"
                           className="sprint-card__edit"
-                          onClick={() => openEditSprintModal(sprint)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditSprintModal(sprint);
+                          }}
                         >
                           Edit
                         </button>
@@ -598,12 +581,13 @@ export function ProjectDetailPage() {
                           <button
                             type="button"
                             className="sprint-card__delete"
-                            onClick={() =>
+                            onClick={(event) => {
+                              event.stopPropagation();
                               setSprintToDelete({
                                 id: sprint.id,
                                 name: sprint.name,
-                              })
-                            }
+                              });
+                            }}
                           >
                             Delete
                           </button>

@@ -16,3 +16,7 @@ You will modify my project follow the instructions:-
 7. Update the color combination, like project status always same color, so need to color variation to understand user, as well delete button, edit button all kinds of various action color will be meaningful, do it.
 
 8. I have added Sprints modules and you will get API in API_GUIDE.md file, Now Implement it in the project, Sprint show under the project and Show it's as card wise, must hihglight end date start date and name as well remeber you that user can understand properly when a sprint
+
+9. Sprint card will be clickable, After click show tickets card page where show all ticket cards, I have already added tickets APi's in API Guide file.
+
+10. Then, user can create Ticket, update ticket, delete ticket, even when click above ticket card ticket all information show in the modal, and there user can update ticket like change the status or priority or description or title, event in ticket card above user can change ticket status and priority also. And every action color will be understandable as user can understand properly.

@@ -8,6 +8,7 @@ import { OrganizationDetailPage } from "./pages/organizations/OrganizationDetail
 import { OrganizationsPage } from "./pages/organizations/OrganizationsPage";
 import { ProfilePage } from "./pages/profile/ProfilePage";
 import { ProjectDetailPage } from "./pages/projects/ProjectDetailPage";
+import { SprintTicketsPage } from "./pages/tickets/SprintTicketsPage";
 
 function App() {
   return (
@@ -29,6 +30,10 @@ function App() {
           <Route
             path="/organizations/:organizationId/projects/:projectId"
             element={<ProjectDetailPage />}
+          />
+          <Route
+            path="/organizations/:organizationId/projects/:projectId/sprints/:sprintId"
+            element={<SprintTicketsPage />}
           />
         </Route>
       </Route>
