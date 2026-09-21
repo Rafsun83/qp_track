@@ -1013,6 +1013,196 @@ curl -X DELETE http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-..
 
 ---
 
+## Tickets
+
+Route prefix is `/api/project/:projectId/sprint/:sprintId/ticket...` — **tickets always belong to a sprint**, not directly to a project. There is no backlog concept: a ticket cannot be created without a `sprintId`, and the DB foreign key is `ON DELETE CASCADE`, so deleting a sprint deletes every ticket inside it.
+
+No `@Roles(...)` on any of these routes (no `:organizationId` param to key one off, same as Project Members/Sprints above). Every route does its own manual check in `TicketService`, keyed off the caller's `project_members` row for `:projectId`:
+
+- The caller must have a `project_members` row for `:projectId` at all, or every route below responds `403 Forbidden, "You are not a member of this project"`.
+- `POST`, `PUT`, and `DELETE` additionally require the caller's role on that row to be `LEAD` or `CONTRIBUTOR` (`VIEWER` is read-only) — otherwise `403 Forbidden, "Only the project LEAD or CONTRIBUTOR can <create|update|delete> tickets"`. Unlike sprints, ticket deletion is **not** `LEAD`-only — `CONTRIBUTOR` can delete tickets too.
+- `GET` (both routes) only requires membership — any role, including `VIEWER`, can read.
+- On every route, `:sprintId` is additionally verified to belong to `:projectId` (`404 Not Found, "Sprint not found in this project"` otherwise) — you can't operate on a sprint from a different project just because you know its id.
+
+All single-ticket routes (`GET`/`PUT`/`DELETE .../ticket/:ticketId`) are scoped to `{ id: ticketId, projectId, sprintId }`, not just `id` — a `ticketId` that exists but under a different sprint (even within the same project) 404s instead of leaking across sprints.
+
+### `POST /api/project/:projectId/sprint/:sprintId/ticket`
+
+**Requires auth + project membership** (`LEAD` or `CONTRIBUTOR` on `:projectId`, per above).
+
+**Body (`CreateTicketDto`):**
+
+| Field         | Type   | Rules                                                                 |
+|---------------|--------|--------------------------------------------------------------------------|
+| `title`       | string | required, non-empty                                                      |
+| `description` | string | required, non-empty                                                      |
+| `status`      | string | optional, one of `TODO` / `IN_PROGRESS` / `IN_REVIEW` / `DONE` / `CANCELLED` / `HOLD` — defaults to `TODO` if omitted |
+| `priority`    | string | optional, one of `LOW` / `MEDIUM` / `HIGH` / `URGENT` — defaults to `LOW` if omitted |
+| `metaData`    | object | optional, free-form JSON object, e.g. `{"browser": "Chrome", "os": "macOS", "environment": "staging"}` |
+
+`sprintId` is **not** a body field — it's taken from the URL. `createdBy` and `assigneeId` are also not body fields (sending them is rejected — see below); both are set server-side from the caller's JWT, and **the creator is automatically the initial assignee** (`createdBy === assigneeId` at creation time). Reassigning to someone else is only possible afterward, via `PUT .../ticket/:ticketId`.
+
+**Success — `201 Created`:**
+
+```json
+{
+  "title": "Fix login redirect loop",
+  "description": "Users get bounced back to /login after SSO",
+  "status": "TODO",
+  "priority": "LOW",
+  "metaData": { "browser": "Chrome", "os": "macOS", "environment": "staging" },
+  "projectId": "5c2b1f4a-...",
+  "sprintId": "9e1f7c3a-...",
+  "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "assigneeId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "id": "c7de719b-ed89-4396-9483-287e1c0e06f3",
+  "createdAt": "2026-09-21T10:14:04.131Z",
+  "updatedAt": "2026-09-21T10:14:04.131Z",
+  "deletedAt": null
+}
+```
+
+**Failure:**
+- `400 Bad Request` — missing/empty `title`/`description`, an invalid `status`/`priority`, or an unknown field (including `sprintId`, `createdBy`, or `assigneeId` in the body — the global `whitelist`/`forbidNonWhitelisted` pipe rejects them outright).
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`, or is a member but only `VIEWER`.
+- `404 Not Found` — `:sprintId` doesn't belong to `:projectId`.
+
+**Example:**
+
+```bash
+curl -X POST http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"title": "Fix login redirect loop", "description": "Users get bounced back to /login after SSO", "metaData": {"browser": "Chrome", "os": "macOS", "environment": "staging"}}'
+```
+
+---
+
+### `GET /api/project/:projectId/sprint/:sprintId/ticket`
+
+**Requires auth + project membership** (any role).
+
+**Success — `200 OK`:** an array of every ticket currently in that sprint (same shape as the create response). An empty array `[]` if the sprint has none. A ticket that was moved to a different sprint via `PUT` (see below) will no longer show up here.
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`.
+- `404 Not Found` — `:sprintId` doesn't belong to `:projectId`.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### `GET /api/project/:projectId/sprint/:sprintId/ticket/:ticketId`
+
+**Requires auth + project membership** (any role).
+
+**Success — `200 OK`:** the ticket row (same shape as the create response).
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`.
+- `404 Not Found` — no ticket with that `ticketId` exists on `:sprintId`/`:projectId` (including a ticket that exists but currently belongs to a different sprint).
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c7de719b-... \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+### `PUT /api/project/:projectId/sprint/:sprintId/ticket/:ticketId`
+
+**Requires auth + project membership** (`LEAD` or `CONTRIBUTOR` on `:projectId`, per above). The ticket is looked up under the sprint in the URL, so `:sprintId` here means "the sprint the ticket currently belongs to," not necessarily where it ends up.
+
+**Body (`UpdateTicketDto`, all fields optional):**
+
+| Field         | Type   | Rules                                                                 |
+|---------------|--------|--------------------------------------------------------------------------|
+| `title`       | string | optional                                                                  |
+| `description` | string | optional                                                                  |
+| `sprintId`    | string | optional, UUID — **moves the ticket to a different sprint** in the same project (validated the same way as `POST`; a sprint id from another project 404s) |
+| `status`      | string | optional, one of `TODO` / `IN_PROGRESS` / `IN_REVIEW` / `DONE` / `CANCELLED` / `HOLD` |
+| `priority`    | string | optional, one of `LOW` / `MEDIUM` / `HIGH` / `URGENT`                    |
+| `assigneeId`  | string | optional, UUID — **this is the only way to reassign a ticket** after creation |
+| `metaData`    | object | optional, free-form JSON object                                          |
+
+Only fields actually present in the request body are applied — omitted fields keep their current value (fields not sent are filtered out before merging, precisely to avoid blanking columns the caller didn't intend to touch).
+
+**Success — `200 OK`:** the updated ticket row. If `sprintId` was changed, subsequent `GET`s must use the *new* `:sprintId` in the URL — the old sprint's list/get routes will 404 for this ticket.
+
+```json
+{
+  "id": "c7de719b-ed89-4396-9483-287e1c0e06f3",
+  "projectId": "5c2b1f4a-...",
+  "sprintId": "9e1f7c3a-...",
+  "title": "Fix login redirect loop",
+  "description": "Users get bounced back to /login after SSO",
+  "status": "IN_PROGRESS",
+  "priority": "LOW",
+  "metaData": { "browser": "Chrome", "os": "macOS", "environment": "staging" },
+  "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "assigneeId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+  "createdAt": "2026-09-21T10:14:04.131Z",
+  "updatedAt": "2026-09-21T10:14:23.609Z",
+  "deletedAt": null
+}
+```
+
+**Failure:**
+- `400 Bad Request` — invalid `status`/`priority`, a non-UUID `sprintId`/`assigneeId`, or an unknown field (`createdBy` is still not settable here).
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`, or is a member but only `VIEWER`.
+- `404 Not Found` — no ticket with that `ticketId` on `:sprintId`/`:projectId`, `:sprintId` doesn't belong to `:projectId`, or (if moving) the new `sprintId` doesn't belong to `:projectId`.
+
+**Example:**
+
+```bash
+# Change status and reassign
+curl -X PUT http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c7de719b-... \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"status": "IN_PROGRESS", "assigneeId": "df7db73d-f047-44d5-9d51-62ec043bfe0e"}'
+
+# Move to a different sprint
+curl -X PUT http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c7de719b-... \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"sprintId": "a1b2c3d4-..."}'
+```
+
+---
+
+### `DELETE /api/project/:projectId/sprint/:sprintId/ticket/:ticketId`
+
+**Requires auth + project membership** (`LEAD` or `CONTRIBUTOR` on `:projectId` — not `LEAD`-only, unlike sprint deletion).
+
+No body.
+
+**Success — `200 OK`:** empty body.
+
+**Failure:**
+- `401 Unauthorized` — missing/invalid/expired bearer token.
+- `403 Forbidden` — caller is not a member of `:projectId`, or is a member but only `VIEWER`.
+- `404 Not Found` — no ticket with that `ticketId` exists on `:sprintId`/`:projectId`.
+
+**Example:**
+
+```bash
+curl -X DELETE http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c7de719b-... \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 ## `POST /webhook/response`
 
 **API key only** — same auth model as `GET /api/users/:id`: excluded from the global `AuthGuard`, protected instead by `ApiKeyGuard` via an `x-api-key` header (get one from `POST /api-key`). No JWT accepted.

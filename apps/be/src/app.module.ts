@@ -14,6 +14,7 @@ import { ProjectMemberModule } from './modules/project_members/projectMember.mod
 import { ProjectModule } from './modules/projects/project.module.js';
 import { SprintModule } from './modules/sprint/sprint.module.js';
 import { SurveyResponseModule } from './modules/survey_response/survey_response.module.js';
+import { TicketsModule } from './modules/tickets/tockets.module.js';
 import { UserModules } from './modules/users/userModules.js';
 import { WebhookModules } from './modules/webhook/webhook.module.js';
 
@@ -62,6 +63,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ProjectModule,
     ProjectMemberModule,
     SprintModule,
+    TicketsModule,
 
     WebhookModules,
     AuthModule,
