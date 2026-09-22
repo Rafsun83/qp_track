@@ -23,7 +23,7 @@
 @Module({
   imports: [TypeOrmModule.forFeature([OrganizationMember])],
   controllers: [OrganizationMemberController],
-  providers: [OrganizationMemberService],   // not in `exports`
+  providers: [OrganizationMemberService], // not in `exports`
 })
 export class OrganizationMembersModule {}
 ```
@@ -40,12 +40,13 @@ await manager.save(OrganizationMember, {
 
 This means there are now **two independent code paths that create membership rows** with two different levels of validation and no shared logic:
 
-| Path | Validates input? | Checks duplicate membership? | Checks org/user exist? |
-|---|---|---|---|
-| `OrganizationService.createOrganization` (transactional) | No (raw ids) | No | No (FKs already valid, came from the same tx) |
-| `OrganizationMemberController → POST /create-member` | Yes (DTO) | **No** | **No** — relies on the DB throwing an FK error |
+| Path                                                     | Validates input? | Checks duplicate membership? | Checks org/user exist?                         |
+| -------------------------------------------------------- | ---------------- | ---------------------------- | ---------------------------------------------- |
+| `OrganizationService.createOrganization` (transactional) | No (raw ids)     | No                           | No (FKs already valid, came from the same tx)  |
+| `OrganizationMemberController → POST /create-member`     | Yes (DTO)        | **No**                       | **No** — relies on the DB throwing an FK error |
 
 **Fix:**
+
 1. Add `exports: [OrganizationMemberService]` to `OrganizationMembersModule`.
 2. Have `OrganizationService.createOrganization` call `organizationMemberService.createOrganizationMember(...)` (passed the transactional `manager`, or refactored to accept a repository) instead of touching `OrganizationMember` directly. One place owns "how a membership row gets created."
 
@@ -57,6 +58,7 @@ This means there are now **two independent code paths that create membership row
 - `POST /create-member` (`OrganizationMemberController.createOrganizationMember`) lets **any authenticated user add any `userId` to any `organizationId`** — there is no check that the caller is the org's owner (or even a member). Since `organizationId`/`userId` are just UUIDs in the request body, this is a textbook IDOR: anyone can enroll themselves — or anyone else — into any organization.
 
 **Fix:**
+
 - `findAll` should scope results to organizations the requester belongs to (join through `organization_members` on `req.user.sub`), or split into `findMine()` vs. an admin-only `findAll()`.
 - `POST /create-member` (or wherever member-adding ends up living, see §5) needs an authorization check: only the org owner (or a member with an "admin" role — see §4) may add members. This likely means loading the target organization first and comparing `organization.ownerId === req.user.sub` before writing.
 
@@ -82,6 +84,7 @@ This means there are now **two independent code paths that create membership row
 - `POST /create-member` is a verb-style, non-RESTful route bolted onto its own top-level namespace. Given the resource relationship, this should hang off the organization it belongs to, e.g. `POST /organizations/:id/members`, and probably shouldn't live in a controller with no other members-listing/removal endpoints. Right now there's create-only, no `GET /organizations/:id/members` or removal endpoint, so "membership management" is half-implemented.
 
 **Suggested route shape:**
+
 ```
 POST   /organizations              create an org (creator becomes owner+member)
 GET    /organizations              list orgs the caller belongs to
@@ -110,3 +113,18 @@ DELETE /organizations/:id/members/:userId   remove a member
 5. **Medium** — Fix route naming (`/organization` → `/organizations`), nest member routes under `/organizations/:id/members`, add `GET /organizations/:id`.
 6. **Low** — Add a `role` column to `organization_members` for future permission checks.
 7. **Low** — Normalize file naming within `organization_members`, drop the redundant `member.organization` relation load.
+
+`│      Table      │     Rows      │
+├─────────────────┼───────────────┤
+│ users           │ 2,500 (exact) │
+├─────────────────┼───────────────┤
+│ organizations   │ ~23,100       │
+├─────────────────┼───────────────┤
+│ project_members │ ~231,000      │
+├─────────────────┼───────────────┤
+│ projects        │ ~246,900      │
+├─────────────────┼───────────────┤
+│ sprints         │ ~2,311,000    │
+├─────────────────┼───────────────┤
+│ tickets         │ ~24,690,960
+`
