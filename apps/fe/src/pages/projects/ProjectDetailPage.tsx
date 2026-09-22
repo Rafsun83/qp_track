@@ -232,6 +232,14 @@ export function ProjectDetailPage() {
   // instead of letting the request fail with a 403.
   const canDeleteProject = orgMembership?.role === "OWNER" && isProjectLead;
 
+  // The LEAD can't remove themselves and still have permission to delete, so
+  // "all members removed" in practice means no members other than the LEAD.
+  // Guard this in the UI rather than only relying on the confirm dialog, so
+  // the LEAD is steered toward removing members first instead of hitting an
+  // unexplained failure (the backend doesn't enforce this itself - deleting
+  // a project with members still on it would just cascade-delete them).
+  const hasOtherProjectMembers = (project?.members?.length ?? 0) > 1;
+
   // Matches the backend: LEAD or CONTRIBUTOR can create/update sprints,
   // VIEWER is read-only, and only LEAD can delete one.
   const canManageSprints =
@@ -471,16 +479,39 @@ export function ProjectDetailPage() {
         </Link>
         <div className="project-detail__title-row">
           <h1 className="project-detail__title">{project.name}</h1>
-          {canManageProject && (
-            <button
-              type="button"
-              className="project-detail__action-btn project-detail__action-btn--edit"
-              onClick={() => setEditModalOpen(true)}
-            >
-              Edit project
-            </button>
-          )}
+          <div className="project-detail__title-actions">
+            {canManageProject && (
+              <button
+                type="button"
+                className="project-detail__action-btn project-detail__action-btn--edit"
+                onClick={() => setEditModalOpen(true)}
+              >
+                Edit project
+              </button>
+            )}
+            {canDeleteProject && (
+              <button
+                type="button"
+                className="project-detail__action-btn project-detail__action-btn--delete"
+                disabled={hasOtherProjectMembers}
+                title={
+                  hasOtherProjectMembers
+                    ? "Remove all other project members before deleting this project"
+                    : undefined
+                }
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                Delete project
+              </button>
+            )}
+          </div>
         </div>
+        {canDeleteProject && hasOtherProjectMembers && (
+          <p className="project-detail__delete-hint">
+            Remove all other project members before you can delete this
+            project.
+          </p>
+        )}
         <p className="project-detail__meta">
           Key: {project.key} · Status{" "}
           <span
@@ -765,19 +796,6 @@ export function ProjectDetailPage() {
               <button type="submit" disabled={saving}>
                 {saving ? "Saving..." : "Save changes"}
               </button>
-
-              {canDeleteProject && (
-                <button
-                  type="button"
-                  className="project-update-form__delete"
-                  onClick={() => {
-                    setEditModalOpen(false);
-                    setDeleteConfirmOpen(true);
-                  }}
-                >
-                  Delete project
-                </button>
-              )}
             </div>
           </form>
         </Modal>

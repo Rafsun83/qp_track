@@ -34,6 +34,12 @@
   font-size: 22px;
 }
 
+.project-detail__title-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .project-detail__action-btn {
   flex-shrink: 0;
   font: inherit;
@@ -47,12 +53,31 @@
   cursor: pointer;
 }
 
+.project-detail__action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Editing is a lighter-weight action than adding/creating - an outlined
    info color reads as "modify" rather than the filled accent "create/add". */
 .project-detail__action-btn--edit {
   background: none;
   border: 1px solid var(--info-border);
   color: var(--info);
+}
+
+/* Same outlined-danger treatment as every other delete affordance on this
+   page (sprint cards, member list) so "delete" reads consistently. */
+.project-detail__action-btn--delete {
+  background: none;
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+}
+
+.project-detail__delete-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--warning);
 }
 
 .project-detail__meta {
