@@ -22,6 +22,7 @@ import { OrganizationService } from '../service/organization.service.js';
 export class OrganizationController {
   constructor(private readonly organizationService: OrganizationService) {}
 
+  @ResponseMessage('Organization created successfully')
   @Post('organizations')
   createOrganization(
     @Body() organizationData: CreateOrganizationDto,
@@ -33,17 +34,19 @@ export class OrganizationController {
     );
   }
 
-  @ResponseMessage('Organizations fetched successfully!!')
+  @ResponseMessage('Organizations fetched successfully')
   @Get('organizations')
   findAllOrganization(@Request() req: { user: { sub: string } }) {
     return this.organizationService.findAll(req.user.sub);
   }
 
+  @ResponseMessage('Organization fetched successfully')
   @Get('organizations/:organizationId')
   findOneOrganization(@Param('organizationId') organizationId: string) {
     return this.organizationService.findOne(organizationId);
   }
 
+  @ResponseMessage('Organization updated successfully')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   @Patch('organizations/:organizationId')
   updateOrganization(

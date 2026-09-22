@@ -6,7 +6,10 @@ import {
   Param,
   Post,
   Put,
+  UseInterceptors,
 } from '@nestjs/common';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator.js';
+import { ResponseInterceptor } from '../../../common/interceptors/response.interceptor.js';
 import { CurrentUser } from '../../auth/decorator/current-user.decorator.js';
 import { CurrentUserDto } from '../../auth/dto/current-user.dto.js';
 import { CreateCommentDto } from '../dto/comment-create.dto.js';
@@ -16,10 +19,12 @@ import { CommentService } from '../service/comment.service.js';
 const TICKET_COMMENT_PATH =
   'project/:projectId/sprint/:sprintId/ticket/:ticketId/comment';
 
+@UseInterceptors(ResponseInterceptor)
 @Controller('api')
 export class CommentController {
   constructor(private readonly commentService: CommentService) {}
 
+  @ResponseMessage('Comment created successfully')
   @Post(TICKET_COMMENT_PATH)
   createComment(
     @Param('projectId') projectId: string,
@@ -37,6 +42,7 @@ export class CommentController {
     );
   }
 
+  @ResponseMessage('Comments fetched successfully')
   @Get(TICKET_COMMENT_PATH)
   getCommentsForTicket(
     @Param('projectId') projectId: string,
@@ -52,6 +58,7 @@ export class CommentController {
     );
   }
 
+  @ResponseMessage('Comment fetched successfully')
   @Get(`${TICKET_COMMENT_PATH}/:commentId`)
   getCommentById(
     @Param('projectId') projectId: string,
@@ -69,6 +76,7 @@ export class CommentController {
     );
   }
 
+  @ResponseMessage('Comment updated successfully')
   @Put(`${TICKET_COMMENT_PATH}/:commentId`)
   updateComment(
     @Param('projectId') projectId: string,
@@ -88,6 +96,7 @@ export class CommentController {
     );
   }
 
+  @ResponseMessage('Comment deleted successfully')
   @Delete(`${TICKET_COMMENT_PATH}/:commentId`)
   deleteComment(
     @Param('projectId') projectId: string,

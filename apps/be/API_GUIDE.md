@@ -4,6 +4,45 @@ Base URL (local dev): `http://localhost:3001` (or whatever `PORT` is set to in `
 
 Every request/response body is JSON. Send `Content-Type: application/json` on any request with a body.
 
+## Response envelope
+
+Every **successful** response from **every** endpoint in this API — no exceptions, this covers all of them, including `/webhook/*` and `/health` — is wrapped in a shared envelope by a global `ResponseInterceptor` (`apps/be/src/common/interceptors/response.interceptor.ts`), applied per-controller via `@UseInterceptors(ResponseInterceptor)`:
+
+```json
+{
+  "statusCode": 200,
+  "message": "Users fetched successfully",
+  "data": "<-- whatever the endpoint used to return directly is here now",
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
+```
+
+- `statusCode` — the actual HTTP status code Nest already decided for the response (200, 201, etc.) — the same value the response line carries, just also inlined into the body.
+- `message` — a human-readable, per-route string set via `@ResponseMessage('...')` (`apps/be/src/common/decorators/response-message.decorator.ts`); every route in this guide has one, quoted in that route's own section below. A route with no `@ResponseMessage` would default to `"Request successful"`.
+- `data` — **exactly** what the response body used to be before this envelope existed. If an endpoint used to return a bare array, `data` is that array. If it used to return a single object, `data` is that object. If it used to return nothing (`void`, e.g. most `DELETE`s), `data` is `null` rather than the body being empty.
+- `timestamp` — ISO 8601, generated at the moment the response is built (not the request's start time).
+
+Concretely, `GET /api/users` used to return:
+
+```json
+[{ "id": "...", "name": "Jane Doe", "...": "..." }]
+```
+
+and now returns:
+
+```json
+{
+  "statusCode": 200,
+  "message": "Users fetched successfully",
+  "data": [{ "id": "...", "name": "Jane Doe", "...": "..." }],
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
+```
+
+Every "Success" example throughout this guide has been updated to show this actual shape.
+
+**Error responses are unchanged.** Thrown exceptions (`NotFoundException`, `ForbiddenException`, validation failures, etc.) bypass interceptors entirely in NestJS — the envelope above only ever wraps the success path. Failure responses keep exactly the shapes they always had: `{"message": ..., "error": ..., "statusCode": ...}` — see [Common error shapes](#common-error-shapes) at the bottom for the full rundown.
+
 ## Authentication — read this first
 
 Every endpoint in this API requires a JWT **except** the two marked "Public" below (`POST /auth/login`, `POST /auth/register`). This is enforced globally by `AuthGuard` (`apps/be/src/modules/auth/guard/auth.guard.ts`) — there's no per-route opt-in needed for protection; a route is only public if it's explicitly decorated `@Public()`.
@@ -51,11 +90,16 @@ Each endpoint below states whether it currently carries a `@Roles(...)` requirem
 
 Both fields are required non-empty strings.
 
-**Success — `200 OK`:**
+**Success — `200 OK`:** message `"Login successful"`.
 
 ```json
 {
-  "access_token": "eyJhbGciOi..."
+  "statusCode": 200,
+  "message": "Login successful",
+  "data": {
+    "access_token": "eyJhbGciOi..."
+  },
+  "timestamp": "2026-09-22T10:28:39.297Z"
 }
 ```
 
@@ -89,17 +133,22 @@ curl -X POST http://localhost:3001/auth/login \
 
 Any field not in this list is rejected outright (`400 Bad Request`) — the API does not silently ignore unknown fields.
 
-**Success — `201 Created`:** the created user, without the password:
+**Success — `201 Created`:** message `"User registered successfully"`. `data` is the created user, without the password:
 
 ```json
 {
-  "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "name": "Jane Doe",
-  "loginCount": 0,
-  "email": "jane@example.com",
-  "location": "Dhaka",
-  "userName": "janedoe",
-  "createdAt": "2026-09-10T02:07:28.920Z"
+  "statusCode": 201,
+  "message": "User registered successfully",
+  "data": {
+    "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "name": "Jane Doe",
+    "loginCount": 0,
+    "email": "jane@example.com",
+    "location": "Dhaka",
+    "userName": "janedoe",
+    "createdAt": "2026-09-10T02:07:28.920Z"
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -137,11 +186,16 @@ curl -X POST http://localhost:3001/auth/register \
 
 `label` is optional, a free-text string to help you tell keys apart later.
 
-**Success — `201 Created`:** the raw key, returned **once** — only its bcrypt hash is stored, so save it now:
+**Success — `201 Created`:** message `"API key created successfully"`. `data` is the raw key, returned **once** — only its bcrypt hash is stored, so save it now:
 
 ```json
 {
-  "apiKey": "sk-live_6928426a03c7d4160fc41631c4674183e36152daae7b7589f8d399f99a594307"
+  "statusCode": 201,
+  "message": "API key created successfully",
+  "data": {
+    "apiKey": "sk-live_6928426a03c7d4160fc41631c4674183e36152daae7b7589f8d399f99a594307"
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -164,6 +218,17 @@ curl -X POST http://localhost:3001/api-key \
 
 No body or params — the key to revoke is looked up **by `userId` alone**, not by key id. If a user has more than one key, this revokes whichever one the lookup happens to return first, not a specific one you choose. There's currently no way to target one key among several by id.
 
+**Success — `200 OK`:** message `"API key revoked successfully"`, `data: null`.
+
+```json
+{
+  "statusCode": 200,
+  "message": "API key revoked successfully",
+  "data": null,
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
+```
+
 **Failure — `404 Not Found`:** the user has no matching API key to revoke.
 
 **Example:**
@@ -183,17 +248,22 @@ curl -X DELETE http://localhost:3001/api-key/delete \
 
 **Intended usage:** checking whether the user already has a key and its status — e.g. to render "Active key: `sk-live_6928426a...` (label: *my first key*), created Sep 14" in a UI, or to decide whether to show a "Generate key" vs. "Generate new key" button — not for retrieving a key to actually use in requests.
 
-**Success — `200 OK`:**
+**Success — `200 OK`:** message `"Latest API key fetched successfully"`.
 
 ```json
 {
-  "id": "3f9a2b10-...",
-  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "prefix": "sk-live_6928426a",
-  "label": "my first key",
-  "createdAt": "2026-09-14T02:07:28.920Z",
-  "lastUpdatedAt": "2026-09-14T03:00:00.000Z",
-  "revokedAt": null
+  "statusCode": 200,
+  "message": "Latest API key fetched successfully",
+  "data": {
+    "id": "3f9a2b10-...",
+    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "prefix": "sk-live_6928426a",
+    "label": "my first key",
+    "createdAt": "2026-09-14T02:07:28.920Z",
+    "lastUpdatedAt": "2026-09-14T03:00:00.000Z",
+    "revokedAt": null
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -252,23 +322,28 @@ curl "http://localhost:3001/api/users?userName=jane&loginCount=3" \
   -H "Authorization: Bearer <token>"
 ```
 
-**Success — `200 OK`:** an array of users (password never included), e.g.:
+**Success — `200 OK`:** message `"Users fetched successfully"`. `data` is an array of users (password never included), e.g.:
 
 ```json
-[
-  {
-    "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-    "name": "Jane Doe",
-    "loginCount": 3,
-    "email": "jane@example.com",
-    "location": "Dhaka",
-    "userName": "janedoe",
-    "createdAt": "2026-09-10T02:07:28.920Z"
-  }
-]
+{
+  "statusCode": 200,
+  "message": "Users fetched successfully",
+  "data": [
+    {
+      "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+      "name": "Jane Doe",
+      "loginCount": 3,
+      "email": "jane@example.com",
+      "location": "Dhaka",
+      "userName": "janedoe",
+      "createdAt": "2026-09-10T02:07:28.920Z"
+    }
+  ],
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
 ```
 
-An empty array `[]` (not an error) if nothing matches.
+An empty array `[]` for `data` (not an error) if nothing matches.
 
 ---
 
@@ -285,7 +360,16 @@ curl http://localhost:3001/api/users/df7db73d-f047-44d5-9d51-62ec043bfe0e \
   -H "Authorization: Bearer <token>"
 ```
 
-**Success — `200 OK`:** the user object, or `null` if no user has that id (the endpoint doesn't 404 on a missing id — a `null` body is returned).
+**Success — `200 OK`:** message `"User fetched successfully"`. `data` is the user object, or `null` if no user has that id (the endpoint doesn't 404 on a missing id):
+
+```json
+{
+  "statusCode": 200,
+  "message": "User fetched successfully",
+  "data": { "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e", "name": "Jane Doe", "...": "..." },
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
+```
 
 ---
 
@@ -299,34 +383,39 @@ curl http://localhost:3001/api/users/df7db73d-f047-44d5-9d51-62ec043bfe0e \
 |--------|--------|---------------------------|
 | `name` | string | required, non-empty       |
 
-**Success — `201 Created`:** the created organization, with `members` (and each member's `user`) loaded — `owner` is **not** loaded on this response:
+**Success — `201 Created`:** message `"Organization created successfully"`. `data` is the created organization, with `members` (and each member's `user`) loaded — `owner` is **not** loaded on this response:
 
 ```json
 {
-  "id": "b1a2c3d4-...",
-  "name": "Acme Inc",
-  "ownerId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "isActive": true,
-  "createdAt": "2026-09-16T02:07:28.920Z",
-  "updatedAt": "2026-09-16T02:07:28.920Z",
-  "members": [
-    {
-      "id": "3f9a2b10-...",
-      "organizationId": "b1a2c3d4-...",
-      "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-      "role": "OWNER",
-      "joinedAt": "2026-09-16T02:07:28.920Z",
-      "user": {
-        "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-        "name": "Jane Doe",
-        "loginCount": 3,
-        "email": "jane@example.com",
-        "location": "Dhaka",
-        "userName": "janedoe",
-        "createdAt": "2026-09-10T02:07:28.920Z"
+  "statusCode": 201,
+  "message": "Organization created successfully",
+  "data": {
+    "id": "b1a2c3d4-...",
+    "name": "Acme Inc",
+    "ownerId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "isActive": true,
+    "createdAt": "2026-09-16T02:07:28.920Z",
+    "updatedAt": "2026-09-16T02:07:28.920Z",
+    "members": [
+      {
+        "id": "3f9a2b10-...",
+        "organizationId": "b1a2c3d4-...",
+        "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+        "role": "OWNER",
+        "joinedAt": "2026-09-16T02:07:28.920Z",
+        "user": {
+          "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+          "name": "Jane Doe",
+          "loginCount": 3,
+          "email": "jane@example.com",
+          "location": "Dhaka",
+          "userName": "janedoe",
+          "createdAt": "2026-09-10T02:07:28.920Z"
+        }
       }
-    }
-  ]
+    ]
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -349,24 +438,29 @@ curl -X POST http://localhost:3001/api/organizations \
 
 **Requires auth.** No `@Roles(...)`. Lists organizations, but **only ones the caller owns** (`WHERE ownerId = <caller's id>`) — organizations where the caller is merely a `MEMBER` or `ADMIN` (not the `OWNER`) are **not** returned by this endpoint.
 
-**Success — `200 OK`:** an array of organizations, each with `members` (and each member's `user`) and `owner` loaded, e.g.:
+**Success — `200 OK`:** message `"Organizations fetched successfully"`. `data` is an array of organizations, each with `members` (and each member's `user`) and `owner` loaded, e.g.:
 
 ```json
-[
-  {
-    "id": "b1a2c3d4-...",
-    "name": "Acme Inc",
-    "ownerId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-    "isActive": true,
-    "createdAt": "2026-09-16T02:07:28.920Z",
-    "updatedAt": "2026-09-16T02:07:28.920Z",
-    "owner": { "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e", "name": "Jane Doe", "...": "..." },
-    "members": [ { "id": "3f9a2b10-...", "role": "OWNER", "user": { "...": "..." } } ]
-  }
-]
+{
+  "statusCode": 200,
+  "message": "Organizations fetched successfully",
+  "data": [
+    {
+      "id": "b1a2c3d4-...",
+      "name": "Acme Inc",
+      "ownerId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+      "isActive": true,
+      "createdAt": "2026-09-16T02:07:28.920Z",
+      "updatedAt": "2026-09-16T02:07:28.920Z",
+      "owner": { "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e", "name": "Jane Doe", "...": "..." },
+      "members": [ { "id": "3f9a2b10-...", "role": "OWNER", "user": { "...": "..." } } ]
+    }
+  ],
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
 ```
 
-An empty array `[]` (not an error) if the caller doesn't own any organization.
+An empty array `[]` for `data` (not an error) if the caller doesn't own any organization.
 
 **Example:**
 
@@ -381,7 +475,7 @@ curl http://localhost:3001/api/organizations \
 
 **Requires auth (JWT) only.** No `@Roles(...)` and no membership check of any kind — any authenticated user can fetch **any** organization by id, whether or not they belong to it, and the response includes its full member list.
 
-**Success — `200 OK`:** the organization with `members` (and each member's `user`) loaded, or `null` if no organization has that id (same no-404-on-missing-id pattern as `GET /api/users/:id`).
+**Success — `200 OK`:** message `"Organization fetched successfully"`. `data` is the organization with `members` (and each member's `user`) loaded, or `null` if no organization has that id (same no-404-on-missing-id pattern as `GET /api/users/:id`).
 
 **Failure — `401 Unauthorized`:** missing/invalid/expired bearer token.
 
@@ -406,16 +500,21 @@ curl http://localhost:3001/api/organizations/b1a2c3d4-... \
 
 There's only one updatable field today (`name`) and it's required, not optional, so a `PATCH` here behaves like a full replace of that field rather than a true partial update.
 
-**Success — `200 OK`:** the updated organization row — note this is the bare entity from `preload()`/`save()`, **without** `members` or `owner` loaded (unlike the create/list/get-by-id responses above):
+**Success — `200 OK`:** message `"Organization updated successfully"`. `data` is the updated organization row — note this is the bare entity from `preload()`/`save()`, **without** `members` or `owner` loaded (unlike the create/list/get-by-id responses above):
 
 ```json
 {
-  "id": "b1a2c3d4-...",
-  "name": "Acme Incorporated",
-  "ownerId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "isActive": true,
-  "createdAt": "2026-09-16T02:07:28.920Z",
-  "updatedAt": "2026-09-19T10:00:00.000Z"
+  "statusCode": 200,
+  "message": "Organization updated successfully",
+  "data": {
+    "id": "b1a2c3d4-...",
+    "name": "Acme Incorporated",
+    "ownerId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "isActive": true,
+    "createdAt": "2026-09-16T02:07:28.920Z",
+    "updatedAt": "2026-09-19T10:00:00.000Z"
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -447,15 +546,20 @@ curl -X PATCH http://localhost:3001/api/organizations/b1a2c3d4-... \
 | `userId` | string | required, non-empty                          |
 | `role`   | string | required, non-empty — should be one of `OWNER` / `ADMIN` / `MEMBER`, but this isn't enforced by validation |
 
-**Success — `201 Created`:** the created membership row (no nested `user`/`organization` object):
+**Success — `201 Created`:** message `"Organization member added successfully"`. `data` is the created membership row (no nested `user`/`organization` object):
 
 ```json
 {
-  "organizationId": "b1a2c3d4-...",
-  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "role": "MEMBER",
-  "id": "3f9a2b10-...",
-  "joinedAt": "2026-09-16T02:07:28.920Z"
+  "statusCode": 201,
+  "message": "Organization member added successfully",
+  "data": {
+    "organizationId": "b1a2c3d4-...",
+    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "role": "MEMBER",
+    "id": "3f9a2b10-...",
+    "joinedAt": "2026-09-16T02:07:28.920Z"
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -480,27 +584,32 @@ curl -X POST http://localhost:3001/api/organizations/b1a2c3d4-.../members \
 
 **Requires auth (JWT) only.** No `@Roles(...)` and no membership check — any authenticated user can list any organization's members.
 
-**Success — `200 OK`:** an array of membership rows with `user` loaded:
+**Success — `200 OK`:** message `"Organization members fetched successfully"`. `data` is an array of membership rows with `user` loaded:
 
 ```json
-[
-  {
-    "id": "3f9a2b10-...",
-    "organizationId": "b1a2c3d4-...",
-    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-    "role": "OWNER",
-    "joinedAt": "2026-09-16T02:07:28.920Z",
-    "user": {
-      "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-      "name": "Jane Doe",
-      "loginCount": 3,
-      "email": "jane@example.com",
-      "location": "Dhaka",
-      "userName": "janedoe",
-      "createdAt": "2026-09-10T02:07:28.920Z"
+{
+  "statusCode": 200,
+  "message": "Organization members fetched successfully",
+  "data": [
+    {
+      "id": "3f9a2b10-...",
+      "organizationId": "b1a2c3d4-...",
+      "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+      "role": "OWNER",
+      "joinedAt": "2026-09-16T02:07:28.920Z",
+      "user": {
+        "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+        "name": "Jane Doe",
+        "loginCount": 3,
+        "email": "jane@example.com",
+        "location": "Dhaka",
+        "userName": "janedoe",
+        "createdAt": "2026-09-10T02:07:28.920Z"
+      }
     }
-  }
-]
+  ],
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
 ```
 
 **Example:**
@@ -523,12 +632,17 @@ No body. `userId` in the path is the member being removed. The handler now block
 - `403 Forbidden` — caller is not a member of the organization, is only a `MEMBER`, or is targeting their own `userId`.
 - `404 Not Found` — no member with that `userId` exists in this organization.
 
-**Success — `200 OK`:** a TypeORM delete result, not the deleted entity:
+**Success — `200 OK`:** message `"Organization member removed successfully"`. `data` is a TypeORM delete result, not the deleted entity:
 
 ```json
 {
-  "raw": [],
-  "affected": 1
+  "statusCode": 200,
+  "message": "Organization member removed successfully",
+  "data": {
+    "raw": [],
+    "affected": 1
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -554,12 +668,17 @@ No body.
 - `403 Forbidden` — caller is not a member of the organization, holds the `OWNER` role, or is a `MEMBER` targeting someone other than themselves.
 - `404 Not Found` — no member with that `userId` exists in this organization.
 
-**Success — `200 OK`:** a TypeORM delete result, not the deleted entity:
+**Success — `200 OK`:** message `"Left organization successfully"`. `data` is a TypeORM delete result, not the deleted entity:
 
 ```json
 {
-  "raw": [],
-  "affected": 1
+  "statusCode": 200,
+  "message": "Left organization successfully",
+  "data": {
+    "raw": [],
+    "affected": 1
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -590,30 +709,35 @@ Note the route prefix here is singular **`organization`**, not `organizations` l
 
 There's a DB-level `UNIQUE(organizationId, key)` constraint on `projects`, but the service doesn't catch a violation the way `UserService.create` catches a duplicate `userName` — a duplicate `key` within the same organization currently surfaces as an uncaught `QueryFailedError`, i.e. a raw **`500 Internal Server Error`**, not a clean `409 Conflict`.
 
-**Success — `201 Created`:** the created project with `members` loaded, and each member's own `project` also loaded one level deep (so you'll see the project's scalar fields duplicated inside `members[].project`):
+**Success — `201 Created`:** message `"Project created successfully"`. `data` is the created project with `members` loaded, and each member's own `project` also loaded one level deep (so you'll see the project's scalar fields duplicated inside `members[].project`):
 
 ```json
 {
-  "id": "5c2b1f4a-...",
-  "organizationId": "b1a2c3d4-...",
-  "name": "Website Redesign",
-  "key": "WEB",
-  "description": "Revamp the marketing website",
-  "status": "PLANNING",
-  "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "createdAt": "2026-09-19T02:07:28.920Z",
-  "updatedAt": "2026-09-19T02:07:28.920Z",
-  "deletedAt": null,
-  "members": [
-    {
-      "id": "3f9a2b10-...",
-      "projectId": "5c2b1f4a-...",
-      "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-      "role": "LEAD",
-      "addedAt": "2026-09-19T02:07:28.920Z",
-      "project": { "id": "5c2b1f4a-...", "name": "Website Redesign", "...": "same project fields again" }
-    }
-  ]
+  "statusCode": 201,
+  "message": "Project created successfully",
+  "data": {
+    "id": "5c2b1f4a-...",
+    "organizationId": "b1a2c3d4-...",
+    "name": "Website Redesign",
+    "key": "WEB",
+    "description": "Revamp the marketing website",
+    "status": "PLANNING",
+    "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "createdAt": "2026-09-19T02:07:28.920Z",
+    "updatedAt": "2026-09-19T02:07:28.920Z",
+    "deletedAt": null,
+    "members": [
+      {
+        "id": "3f9a2b10-...",
+        "projectId": "5c2b1f4a-...",
+        "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+        "role": "LEAD",
+        "addedAt": "2026-09-19T02:07:28.920Z",
+        "project": { "id": "5c2b1f4a-...", "name": "Website Redesign", "...": "same project fields again" }
+      }
+    ]
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -638,24 +762,29 @@ curl -X POST http://localhost:3001/api/organization/b1a2c3d4-.../project \
 
 **Requires auth + role.** `@Roles(OrganizationRole.OWNER)` — **`OWNER` only**, notably stricter than every other project/organization list-type endpoint above (`ADMIN` cannot list an organization's projects through this route).
 
-**Success — `200 OK`:** an array of projects with `members` loaded (no nested `project` on each member this time — just the member rows):
+**Success — `200 OK`:** message `"Projects fetched successfully"`. `data` is an array of projects with `members` loaded (no nested `project` on each member this time — just the member rows):
 
 ```json
-[
-  {
-    "id": "5c2b1f4a-...",
-    "organizationId": "b1a2c3d4-...",
-    "name": "Website Redesign",
-    "key": "WEB",
-    "description": "Revamp the marketing website",
-    "status": "PLANNING",
-    "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-    "createdAt": "2026-09-19T02:07:28.920Z",
-    "updatedAt": "2026-09-19T02:07:28.920Z",
-    "deletedAt": null,
-    "members": [ { "id": "3f9a2b10-...", "role": "LEAD", "userId": "df7db73d-..." } ]
-  }
-]
+{
+  "statusCode": 200,
+  "message": "Projects fetched successfully",
+  "data": [
+    {
+      "id": "5c2b1f4a-...",
+      "organizationId": "b1a2c3d4-...",
+      "name": "Website Redesign",
+      "key": "WEB",
+      "description": "Revamp the marketing website",
+      "status": "PLANNING",
+      "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+      "createdAt": "2026-09-19T02:07:28.920Z",
+      "updatedAt": "2026-09-19T02:07:28.920Z",
+      "deletedAt": null,
+      "members": [ { "id": "3f9a2b10-...", "role": "LEAD", "userId": "df7db73d-..." } ]
+    }
+  ],
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
 ```
 
 **Failure:**
@@ -675,7 +804,7 @@ curl http://localhost:3001/api/organization/b1a2c3d4-.../project \
 
 **Requires auth (JWT) only.** No `@Roles(...)` and no membership check — any authenticated user can fetch any project by id/organization pair, same pattern as `GET /api/organizations/:id`.
 
-**Success — `200 OK`:** the project with `members` loaded, or `null` if no project matches that `(organizationId, id)` pair (no 404 on a missing id).
+**Success — `200 OK`:** message `"Project fetched successfully"`. `data` is the project with `members` loaded, or `null` if no project matches that `(organizationId, id)` pair (no 404 on a missing id).
 
 **Failure — `401 Unauthorized`:** missing/invalid/expired bearer token.
 
@@ -705,7 +834,7 @@ curl http://localhost:3001/api/organization/b1a2c3d4-.../project/5c2b1f4a-... \
 > - The `:organizationId` in the URL is **not actually verified as the project's real organization** before the update runs; the `RolesGuard` check only confirms the *caller* holds `OWNER`/`ADMIN` in *that* organization, not that the target project belongs to it.
 > - Whatever `organizationId` you pass gets merged into the entity and saved — so calling this with a project `id` that belongs to a *different* organization silently **reassigns that project** to the organization in the URL, as long as you hold `OWNER`/`ADMIN` there. This is a real cross-tenant issue, not just a cosmetic one — worth fixing (scope the lookup with a `findOne({ where: { organizationId, id } })` first, the way `getProjectByIdInOrganization` and `deleteIndividualProject` already do) before relying on this route in anything multi-tenant-sensitive.
 
-**Success — `200 OK`:** the updated project row — bare entity from `preload()`/`save()`, **without** `members` loaded.
+**Success — `200 OK`:** message `"Project updated successfully"`. `data` is the updated project row — bare entity from `preload()`/`save()`, **without** `members` loaded.
 
 **Failure:**
 - `400 Bad Request` — invalid field value (e.g. `status` not in the enum), or an unknown field.
@@ -730,7 +859,16 @@ curl -X PATCH http://localhost:3001/api/organization/b1a2c3d4-.../project/5c2b1f
 
 No body. The delete itself runs via `manager.delete(Project, { organizationId, id })` inside the same transaction, scoped to `{ organizationId, id }` (properly scoped, unlike the `PATCH` above). Unlike before, the handler no longer returns the TypeORM delete result at all — there's still no `404 Not Found` to distinguish "deleted" from "nothing matched," but now that ambiguity is silent rather than surfaced via `affected`.
 
-**Success — `200 OK`:** empty body.
+**Success — `200 OK`:** message `"Project deleted successfully"`, `data: null`.
+
+```json
+{
+  "statusCode": 200,
+  "message": "Project deleted successfully",
+  "data": null,
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
+```
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
@@ -762,15 +900,20 @@ Route prefix is singular here too — `/api/project/:projectId/member...`. None 
 
 There's a DB-level `UNIQUE(projectId, userId)` constraint, but — unlike `OrganizationMemberService.createOrganizationMember`, which pre-checks and throws a clean `409` — this service doesn't check for an existing membership first. Adding a user who's already on the project surfaces as an uncaught `QueryFailedError`, i.e. a raw **`500 Internal Server Error`**.
 
-**Success — `201 Created`:** the created membership row:
+**Success — `201 Created`:** message `"Project member added successfully"`. `data` is the created membership row:
 
 ```json
 {
-  "projectId": "5c2b1f4a-...",
-  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "role": "CONTRIBUTOR",
-  "id": "7a1e9c22-...",
-  "addedAt": "2026-09-19T02:07:28.920Z"
+  "statusCode": 201,
+  "message": "Project member added successfully",
+  "data": {
+    "projectId": "5c2b1f4a-...",
+    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "role": "CONTRIBUTOR",
+    "id": "7a1e9c22-...",
+    "addedAt": "2026-09-19T02:07:28.920Z"
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -796,7 +939,16 @@ curl -X POST http://localhost:3001/api/project/5c2b1f4a-.../member \
 
 No body. Deletes scoped to `{ projectId, userId }` and, unlike the project `DELETE` above, does check `result.affected`.
 
-**Success — `200 OK`:** empty body.
+**Success — `200 OK`:** message `"Project member removed successfully"`, `data: null`.
+
+```json
+{
+  "statusCode": 200,
+  "message": "Project member removed successfully",
+  "data": null,
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
+```
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
@@ -822,15 +974,20 @@ curl -X DELETE http://localhost:3001/api/project/5c2b1f4a-.../member/df7db73d-f0
 |--------|--------|-------------------------------------------------------------|
 | `role` | string | required, must be one of `LEAD` / `CONTRIBUTOR` / `VIEWER` (this one **is** enforced with `@IsEnum`, unlike the `POST` body above) |
 
-**Success — `200 OK`:** the updated membership row:
+**Success — `200 OK`:** message `"Project member role updated successfully"`. `data` is the updated membership row:
 
 ```json
 {
-  "id": "7a1e9c22-...",
-  "projectId": "5c2b1f4a-...",
-  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "role": "LEAD",
-  "addedAt": "2026-09-19T02:07:28.920Z"
+  "statusCode": 200,
+  "message": "Project member role updated successfully",
+  "data": {
+    "id": "7a1e9c22-...",
+    "projectId": "5c2b1f4a-...",
+    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "role": "LEAD",
+    "addedAt": "2026-09-19T02:07:28.920Z"
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -876,16 +1033,21 @@ Unlike `PATCH /api/organization/:organizationId/project/:id` above, the single-s
 
 `startDate` must not be after `endDate`, or the request fails with `400 Bad Request, "startDate must be before endDate"` — checked in the service, not via a DTO validator.
 
-**Success — `201 Created`:** the created sprint row:
+**Success — `201 Created`:** message `"Sprint created successfully"`. `data` is the created sprint row:
 
 ```json
 {
-  "name": "Sprint 1",
-  "startDate": "2026-01-05T00:00:00.000Z",
-  "endDate": "2026-01-19T00:00:00.000Z",
-  "projectId": "5c2b1f4a-...",
-  "id": "9e1f7c3a-...",
-  "status": "PLANNED"
+  "statusCode": 201,
+  "message": "Sprint created successfully",
+  "data": {
+    "name": "Sprint 1",
+    "startDate": "2026-01-05T00:00:00.000Z",
+    "endDate": "2026-01-19T00:00:00.000Z",
+    "projectId": "5c2b1f4a-...",
+    "id": "9e1f7c3a-...",
+    "status": "PLANNED"
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -909,19 +1071,24 @@ curl -X POST http://localhost:3001/api/project/5c2b1f4a-.../sprint \
 
 **Requires auth + project membership** (any role).
 
-**Success — `200 OK`:** an array of every sprint on the project:
+**Success — `200 OK`:** message `"Sprints fetched successfully"`. `data` is an array of every sprint on the project:
 
 ```json
-[
-  {
-    "id": "9e1f7c3a-...",
-    "projectId": "5c2b1f4a-...",
-    "name": "Sprint 1",
-    "startDate": "2026-01-05T00:00:00.000Z",
-    "endDate": "2026-01-19T00:00:00.000Z",
-    "status": "PLANNED"
-  }
-]
+{
+  "statusCode": 200,
+  "message": "Sprints fetched successfully",
+  "data": [
+    {
+      "id": "9e1f7c3a-...",
+      "projectId": "5c2b1f4a-...",
+      "name": "Sprint 1",
+      "startDate": "2026-01-05T00:00:00.000Z",
+      "endDate": "2026-01-19T00:00:00.000Z",
+      "status": "PLANNED"
+    }
+  ],
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
 ```
 
 **Failure:**
@@ -941,7 +1108,7 @@ curl http://localhost:3001/api/project/5c2b1f4a-.../sprint \
 
 **Requires auth + project membership** (any role).
 
-**Success — `200 OK`:** the sprint row (same shape as the list endpoint above).
+**Success — `200 OK`:** message `"Sprint fetched successfully"`. `data` is the sprint row (same shape as one entry in the list endpoint above).
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
@@ -972,7 +1139,7 @@ curl http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-... \
 
 Fields are merged onto the existing sprint (`Object.assign`), then the same `startDate <= endDate` check runs against the merged result — so sending only `endDate` can still 400 if it now falls before the sprint's existing `startDate`.
 
-**Success — `200 OK`:** the updated sprint row.
+**Success — `200 OK`:** message `"Sprint updated successfully"`. `data` is the updated sprint row.
 
 **Failure:**
 - `400 Bad Request` — invalid `startDate`/`endDate`/`status`, the merged `startDate` after `endDate`, or an unknown field.
@@ -997,7 +1164,16 @@ curl -X PUT http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-... \
 
 No body.
 
-**Success — `200 OK`:** empty body.
+**Success — `200 OK`:** message `"Sprint deleted successfully"`, `data: null`.
+
+```json
+{
+  "statusCode": 200,
+  "message": "Sprint deleted successfully",
+  "data": null,
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
+```
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
@@ -1042,23 +1218,28 @@ All single-ticket routes (`GET`/`PUT`/`DELETE .../ticket/:ticketId`) are scoped 
 
 `sprintId` is **not** a body field — it's taken from the URL. `createdBy` and `assigneeId` are also not body fields (sending them is rejected — see below); both are set server-side from the caller's JWT, and **the creator is automatically the initial assignee** (`createdBy === assigneeId` at creation time). Reassigning to someone else is only possible afterward, via `PUT .../ticket/:ticketId`.
 
-**Success — `201 Created`:**
+**Success — `201 Created`:** message `"Ticket created successfully"`.
 
 ```json
 {
-  "title": "Fix login redirect loop",
-  "description": "Users get bounced back to /login after SSO",
-  "status": "TODO",
-  "priority": "LOW",
-  "metaData": { "browser": "Chrome", "os": "macOS", "environment": "staging" },
-  "projectId": "5c2b1f4a-...",
-  "sprintId": "9e1f7c3a-...",
-  "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "assigneeId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "id": "c7de719b-ed89-4396-9483-287e1c0e06f3",
-  "createdAt": "2026-09-21T10:14:04.131Z",
-  "updatedAt": "2026-09-21T10:14:04.131Z",
-  "deletedAt": null
+  "statusCode": 201,
+  "message": "Ticket created successfully",
+  "data": {
+    "title": "Fix login redirect loop",
+    "description": "Users get bounced back to /login after SSO",
+    "status": "TODO",
+    "priority": "LOW",
+    "metaData": { "browser": "Chrome", "os": "macOS", "environment": "staging" },
+    "projectId": "5c2b1f4a-...",
+    "sprintId": "9e1f7c3a-...",
+    "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "assigneeId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "id": "c7de719b-ed89-4396-9483-287e1c0e06f3",
+    "createdAt": "2026-09-21T10:14:04.131Z",
+    "updatedAt": "2026-09-21T10:14:04.131Z",
+    "deletedAt": null
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -1083,7 +1264,7 @@ curl -X POST http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../
 
 **Requires auth + project membership** (any role).
 
-**Success — `200 OK`:** an array of every ticket currently in that sprint (same shape as the create response). An empty array `[]` if the sprint has none. A ticket that was moved to a different sprint via `PUT` (see below) will no longer show up here.
+**Success — `200 OK`:** message `"Tickets fetched successfully"`. `data` is an array of every ticket currently in that sprint (each shaped like the create response's `data`). An empty array `[]` for `data` if the sprint has none. A ticket that was moved to a different sprint via `PUT` (see below) will no longer show up here.
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
@@ -1103,7 +1284,7 @@ curl http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket \
 
 **Requires auth + project membership** (any role).
 
-**Success — `200 OK`:** the ticket row (same shape as the create response).
+**Success — `200 OK`:** message `"Ticket fetched successfully"`. `data` is the ticket row (same shape as the create response's `data`).
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
@@ -1137,23 +1318,28 @@ curl http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c
 
 Only fields actually present in the request body are applied — omitted fields keep their current value (fields not sent are filtered out before merging, precisely to avoid blanking columns the caller didn't intend to touch).
 
-**Success — `200 OK`:** the updated ticket row. If `sprintId` was changed, subsequent `GET`s must use the *new* `:sprintId` in the URL — the old sprint's list/get routes will 404 for this ticket.
+**Success — `200 OK`:** message `"Ticket updated successfully"`. `data` is the updated ticket row. If `sprintId` was changed, subsequent `GET`s must use the *new* `:sprintId` in the URL — the old sprint's list/get routes will 404 for this ticket.
 
 ```json
 {
-  "id": "c7de719b-ed89-4396-9483-287e1c0e06f3",
-  "projectId": "5c2b1f4a-...",
-  "sprintId": "9e1f7c3a-...",
-  "title": "Fix login redirect loop",
-  "description": "Users get bounced back to /login after SSO",
-  "status": "IN_PROGRESS",
-  "priority": "LOW",
-  "metaData": { "browser": "Chrome", "os": "macOS", "environment": "staging" },
-  "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "assigneeId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "createdAt": "2026-09-21T10:14:04.131Z",
-  "updatedAt": "2026-09-21T10:14:23.609Z",
-  "deletedAt": null
+  "statusCode": 200,
+  "message": "Ticket updated successfully",
+  "data": {
+    "id": "c7de719b-ed89-4396-9483-287e1c0e06f3",
+    "projectId": "5c2b1f4a-...",
+    "sprintId": "9e1f7c3a-...",
+    "title": "Fix login redirect loop",
+    "description": "Users get bounced back to /login after SSO",
+    "status": "IN_PROGRESS",
+    "priority": "LOW",
+    "metaData": { "browser": "Chrome", "os": "macOS", "environment": "staging" },
+    "createdBy": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "assigneeId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "createdAt": "2026-09-21T10:14:04.131Z",
+    "updatedAt": "2026-09-21T10:14:23.609Z",
+    "deletedAt": null
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -1187,7 +1373,16 @@ curl -X PUT http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../t
 
 No body.
 
-**Success — `200 OK`:** empty body.
+**Success — `200 OK`:** message `"Ticket deleted successfully"`, `data: null`.
+
+```json
+{
+  "statusCode": 200,
+  "message": "Ticket deleted successfully",
+  "data": null,
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
+```
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
@@ -1228,16 +1423,21 @@ Single-comment routes (`GET`/`PUT`/`DELETE .../comment/:commentId`) are scoped t
 
 `userId` is not a body field — it's taken from the caller's JWT, the same way `createdBy`/`assigneeId` are on ticket creation.
 
-**Success — `201 Created`:**
+**Success — `201 Created`:** message `"Comment created successfully"`.
 
 ```json
 {
-  "comment": "Reproduced this on staging too.",
-  "ticketId": "c7de719b-ed89-4396-9483-287e1c0e06f3",
-  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "id": "2ba7107c-2685-451a-ad2d-89e875758907",
-  "createdAt": "2026-09-21T11:57:19.590Z",
-  "updatedAt": "2026-09-21T11:57:19.590Z"
+  "statusCode": 201,
+  "message": "Comment created successfully",
+  "data": {
+    "comment": "Reproduced this on staging too.",
+    "ticketId": "c7de719b-ed89-4396-9483-287e1c0e06f3",
+    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "id": "2ba7107c-2685-451a-ad2d-89e875758907",
+    "createdAt": "2026-09-21T11:57:19.590Z",
+    "updatedAt": "2026-09-21T11:57:19.590Z"
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -1262,7 +1462,7 @@ curl -X POST http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../
 
 **Requires auth + project membership** (any role).
 
-**Success — `200 OK`:** an array of every comment on that ticket, oldest first (`ORDER BY created_at ASC`, so it reads top-to-bottom like a discussion thread). An empty array `[]` if there are none.
+**Success — `200 OK`:** message `"Comments fetched successfully"`. `data` is an array of every comment on that ticket, oldest first (`ORDER BY created_at ASC`, so it reads top-to-bottom like a discussion thread). An empty array `[]` for `data` if there are none.
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
@@ -1282,7 +1482,7 @@ curl http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c
 
 **Requires auth + project membership** (any role).
 
-**Success — `200 OK`:** the comment row (same shape as the create response).
+**Success — `200 OK`:** message `"Comment fetched successfully"`. `data` is the comment row (same shape as the create response's `data`).
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
@@ -1308,7 +1508,7 @@ curl http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../ticket/c
 |-----------|--------|------------------------|
 | `comment` | string | required, non-empty  |
 
-**Success — `200 OK`:** the updated comment row.
+**Success — `200 OK`:** message `"Comment updated successfully"`. `data` is the updated comment row.
 
 **Failure:**
 - `400 Bad Request` — missing/empty `comment`, or an unknown field.
@@ -1333,7 +1533,16 @@ curl -X PUT http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-.../t
 
 No body.
 
-**Success — `200 OK`:** empty body.
+**Success — `200 OK`:** message `"Comment deleted successfully"`, `data: null`.
+
+```json
+{
+  "statusCode": 200,
+  "message": "Comment deleted successfully",
+  "data": null,
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
+```
 
 **Failure:**
 - `401 Unauthorized` — missing/invalid/expired bearer token.
@@ -1355,6 +1564,8 @@ curl -X DELETE http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-..
 
 Intended as a webhook target (e.g. a survey platform posting responses back to you). The `userId` stored on the record is **not** taken from the body — it's resolved from whichever API key made the request.
 
+> ⚠️ **Breaking change for external callers:** this route now goes through the same global [response envelope](#response-envelope) as every other endpoint, so the old bare `{"status": "ok"}` body is gone — `status` now lives at `data.status`. If an external system (e.g. a survey platform) parses this response and reads `body.status` directly, it will break until it's updated to read `body.data.status` instead.
+
 **Body:** any JSON object — it's stored as-is, no schema validation:
 
 ```json
@@ -1364,10 +1575,15 @@ Intended as a webhook target (e.g. a survey platform posting responses back to y
 }
 ```
 
-**Success — `201 Created`:**
+**Success — `201 Created`:** message `"Webhook received successfully"`.
 
 ```json
-{ "status": "ok" }
+{
+  "statusCode": 201,
+  "message": "Webhook received successfully",
+  "data": { "status": "ok" },
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
 ```
 
 **Failure — `401 Unauthorized`:** missing, invalid, or revoked API key.
@@ -1389,13 +1605,20 @@ curl -X POST http://localhost:3001/webhook/response \
 
 **Body:** any JSON object, echoed back unchanged.
 
-**Success — `201 Created`:**
+> ⚠️ Same breaking change as `POST /webhook/response` above — `status`, `userId`, and `responseData` now live under `data`, not at the top level.
+
+**Success — `201 Created`:** message `"Webhook test received successfully"`.
 
 ```json
 {
-  "status": "ok",
-  "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-  "responseData": { "surveyId": "abc123", "answers": { "q1": "yes" } }
+  "statusCode": 201,
+  "message": "Webhook test received successfully",
+  "data": {
+    "status": "ok",
+    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "responseData": { "surveyId": "abc123", "answers": { "q1": "yes" } }
+  },
+  "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
@@ -1434,24 +1657,31 @@ curl "http://localhost:3001/api/survey-response?userId=df7db73d-f047-44d5-9d51-6
   -H "Authorization: Bearer <token>"
 ```
 
-**Success — `200 OK`:** an array of survey response records, e.g.:
+**Success — `200 OK`:** message `"Survey responses fetched successfully"`. `data` is an array of survey response records, e.g.:
 
 ```json
-[
-  {
-    "id": "3f9a2b10-...",
-    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
-    "responseData": { "surveyId": "abc123", "answers": { "q1": "yes" } },
-    "createdAt": "2026-09-14T02:07:28.920Z"
-  }
-]
+{
+  "statusCode": 200,
+  "message": "Survey responses fetched successfully",
+  "data": [
+    {
+      "id": "3f9a2b10-...",
+      "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+      "responseData": { "surveyId": "abc123", "answers": { "q1": "yes" } },
+      "createdAt": "2026-09-14T02:07:28.920Z"
+    }
+  ],
+  "timestamp": "2026-09-22T10:28:39.207Z"
+}
 ```
 
-An empty array `[]` (not an error) if nothing matches.
+An empty array `[]` for `data` (not an error) if nothing matches.
 
 ---
 
 ## Common error shapes
+
+These are for **error** responses only (anything a thrown exception produces) and are unaffected by the [response envelope](#response-envelope) above, which only ever wraps successful responses.
 
 | Status | When | Example body |
 |--------|------|---------------|

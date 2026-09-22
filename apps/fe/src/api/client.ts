@@ -49,7 +49,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  const parsed = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
     // Only treat this as a session expiry if the request was actually authenticated -
@@ -57,8 +57,18 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     if (response.status === 401 && token) {
       unauthorizedHandler?.();
     }
-    throw new ApiError(response.status, extractErrorMessage(data, response.statusText), data);
+    // Error responses are NOT wrapped in the envelope below - they bypass the
+    // backend's ResponseInterceptor entirely (exceptions skip interceptors),
+    // so they keep their original { message, error, statusCode } shape.
+    throw new ApiError(response.status, extractErrorMessage(parsed, response.statusText), parsed);
   }
 
-  return data as T;
+  // Every successful backend response is wrapped in a shared envelope:
+  // { statusCode, message, data, timestamp }. Unwrap it here, once, so
+  // every caller of apiRequest keeps getting back the plain payload it
+  // already expects - falls back to the raw body if something unwrapped
+  // ever shows up unexpectedly, rather than throwing.
+  return (parsed && typeof parsed === "object" && "data" in parsed
+    ? (parsed as { data: unknown }).data
+    : parsed) as T;
 }

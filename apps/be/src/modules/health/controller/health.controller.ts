@@ -1,5 +1,5 @@
 // src/health/health.controller.ts
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, UseInterceptors } from '@nestjs/common';
 import {
   DiskHealthIndicator,
   HealthCheck,
@@ -8,8 +8,11 @@ import {
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
 // import { ApiTags } from '@nestjs/swagger';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator.js';
+import { ResponseInterceptor } from '../../../common/interceptors/response.interceptor.js';
 
 // @ApiTags('health')
+@UseInterceptors(ResponseInterceptor)
 @Controller('health')
 export class HealthController {
   constructor(
@@ -19,6 +22,7 @@ export class HealthController {
     private disk: DiskHealthIndicator,
   ) {}
 
+  @ResponseMessage('Health check successful')
   @Get()
   @HealthCheck()
   check() {

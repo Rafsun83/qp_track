@@ -6,7 +6,10 @@ import {
   Param,
   Patch,
   Post,
+  UseInterceptors,
 } from '@nestjs/common';
+import { ResponseMessage } from '../../../common/decorators/response-message.decorator.js';
+import { ResponseInterceptor } from '../../../common/interceptors/response.interceptor.js';
 import { CurrentUser } from '../../auth/decorator/current-user.decorator.js';
 import { Roles } from '../../auth/decorator/roles.decorator.js';
 import { CurrentUserDto } from '../../auth/dto/current-user.dto.js';
@@ -15,10 +18,12 @@ import { craeteProjectDto } from '../dto/project-create.dto.js';
 import { UpdateProjectDto } from '../dto/project-update.dto.js';
 import { ProjectService } from '../service/project.service.js';
 
+@UseInterceptors(ResponseInterceptor)
 @Controller('api')
 export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}
 
+  @ResponseMessage('Project created successfully')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   @Post('organization/:organizationId/project')
   createProject(
@@ -34,6 +39,7 @@ export class ProjectController {
   }
 
   // @Roles(OrganizationRole.OWNER)
+  @ResponseMessage('Projects fetched successfully')
   @Get('organization/:organizationId/project')
   getAllProjectInOrganization(
     @Param('organizationId') organizationId: string,
@@ -45,6 +51,7 @@ export class ProjectController {
     );
   }
 
+  @ResponseMessage('Project fetched successfully')
   @Get('organization/:organizationId/project/:id')
   getProjectByIdOrganization(
     @Param('organizationId') organizationId: string,
@@ -56,6 +63,7 @@ export class ProjectController {
     );
   }
 
+  @ResponseMessage('Project updated successfully')
   @Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)
   @Patch('organization/:organizationId/project/:id')
   updateProject(
@@ -70,6 +78,7 @@ export class ProjectController {
     );
   }
 
+  @ResponseMessage('Project deleted successfully')
   @Roles(OrganizationRole.OWNER)
   @Delete('organization/:organizationId/project/:id')
   deleteProject(
