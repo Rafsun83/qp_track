@@ -8,7 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { OrganizationMember } from '../../organization_members/entity/organization_member.entity.js';
+import type { OrganizationMember } from '../../organization_members/entity/organization_member.entity.js';
 import { User } from '../../users/entity/user.entity.js';
 
 @Entity('organizations')
@@ -26,7 +26,10 @@ export class Organizations {
   @JoinColumn({ name: 'owner_id' })
   owner: User;
 
-  @OneToMany(() => OrganizationMember, (member) => member.organization)
+  @OneToMany(
+    'OrganizationMember',
+    (member: OrganizationMember) => member.organization,
+  )
   members: OrganizationMember[];
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
