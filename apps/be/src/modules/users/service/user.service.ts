@@ -26,13 +26,22 @@ export class UserService {
 
     if (userName) {
       qb.andWhere('user.userName ILIKE :userName', {
-        userName: `%${userName}%`,
+        userName: `${userName}%`,
       });
     }
 
     if (loginCount !== undefined) {
       qb.andWhere('user.loginCount = :loginCount', { loginCount });
     }
+    // if (userName) {
+    //   qb.andWhere('user.userName % :userName', { userName })
+    //     .addSelect('similarity(user.userName, :userName)', 'sim')
+    //     .orderBy('sim', 'DESC'); // best matches first
+    // }
+
+    // if (loginCount !== undefined) {
+    //   qb.andWhere('user.loginCount = :loginCount', { loginCount });
+    // }
 
     return qb.getMany();
   }

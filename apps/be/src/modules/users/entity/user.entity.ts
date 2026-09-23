@@ -35,6 +35,12 @@ export class User {
   @Column()
   location: string;
 
+  // The unique constraint below gives this column a plain B-tree index,
+  // which only helps exact-match/prefix lookups. Username search
+  // (UserService.findAll) does a both-sides ILIKE '%text%', so there's
+  // also a pg_trgm GIN index on this column (see migration
+  // AddUsernameTrigramIndex) - TypeORM's @Index() can't express the
+  // gin_trgm_ops operator class, so it's not declared here as a decorator.
   @Column({ unique: true })
   userName: string;
 
