@@ -4,6 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import { OrganizationMember } from '../../organization_members/entity/organization_member.entity.js';
 import { OrganizationRole } from '../../organization_members/enum/organization-role.enum.js';
 import { CreateOrganizationDto } from '../dto/create-organization.dto.js';
+import { SearchFilterOrganizationDto } from '../dto/search-filter-organization.dto.js';
 import { UpdateOrganizationDto } from '../dto/update-organization.dto.js';
 import { Organizations } from '../entity/organization.entity.js';
 
@@ -44,20 +45,40 @@ export class OrganizationService {
     });
   }
 
-  async findAll(userId: string) {
-    return this.organizationRepository.find({
-      where: {
-        // ownerId: userId,
-        members: {
-          user: {
-            id: userId,
-          },
-        },
-      },
-      relations: {
-        members: {},
-      },
-    });
+  async findAll(userId: string, query: SearchFilterOrganizationDto = {}) {
+    // const { name } = query;
+    // const orgQuery =
+    //   this.organizationRepository.createQueryBuilder('organizations');
+
+    // return this.organizationRepository.find({
+    //   where: {
+    //     // ownerId: userId,
+    //     members: {
+    //       user: {
+    //         id: userId,
+    //       },
+    //     },
+    //   },
+    //   relations: {
+    //     members: {},
+    //   },
+    // });
+
+    const { name } = query;
+
+    const qb = this.organizationRepository
+      .createQueryBuilder('organizations')
+      .innerJoin('organizations.members', 'members')
+      .innerJoin('members.user', 'user')
+      .where('user.id = :userId', { userId });
+
+    if (name) {
+      qb.andWhere('organizations.name ILIKE :name', { name: `${name}%` });
+    }
+    // Load full members relation for the response, without affecting the filter join above
+    qb.leftJoinAndSelect('organizations.members', 'allMembers');
+
+    return qb.getMany();
   }
 
   async findOne(id: string) {

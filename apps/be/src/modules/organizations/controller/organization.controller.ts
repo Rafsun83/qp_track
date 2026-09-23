@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   Request,
   UseInterceptors,
@@ -14,6 +15,7 @@ import { ResponseInterceptor } from '../../../common/interceptors/response.inter
 import { Roles } from '../../auth/decorator/roles.decorator.js';
 import { OrganizationRole } from '../../organization_members/enum/organization-role.enum.js';
 import { CreateOrganizationDto } from '../dto/create-organization.dto.js';
+import { SearchFilterOrganizationDto } from '../dto/search-filter-organization.dto.js';
 import { UpdateOrganizationDto } from '../dto/update-organization.dto.js';
 import { OrganizationService } from '../service/organization.service.js';
 
@@ -36,8 +38,11 @@ export class OrganizationController {
 
   @ResponseMessage('Organizations fetched successfully')
   @Get('organizations')
-  findAllOrganization(@Request() req: { user: { sub: string } }) {
-    return this.organizationService.findAll(req.user.sub);
+  findAllOrganization(
+    @Request() req: { user: { sub: string } },
+    @Query() query: SearchFilterOrganizationDto,
+  ) {
+    return this.organizationService.findAll(req.user.sub, query);
   }
 
   @ResponseMessage('Organization fetched successfully')
