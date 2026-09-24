@@ -5,6 +5,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
@@ -26,10 +27,7 @@ export class User {
   @Column()
   email: string;
 
-  @OneToMany(
-    'OrganizationMember',
-    (member: OrganizationMember) => member.user,
-  )
+  @OneToMany('OrganizationMember', (member: OrganizationMember) => member.user)
   memberships: OrganizationMember[];
 
   @Column()
@@ -42,6 +40,7 @@ export class User {
   // AddUsernameTrigramIndex) - TypeORM's @Index() can't express the
   // gin_trgm_ops operator class, so it's not declared here as a decorator.
   @Column({ unique: true })
+  @Index('IDX_users_userName_trgm', { synchronize: false })
   userName: string;
 
   @Column({ select: false })

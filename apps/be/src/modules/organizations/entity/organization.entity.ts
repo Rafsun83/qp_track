@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -17,6 +18,7 @@ export class Organizations {
   id: string;
 
   @Column({ type: 'varchar', length: 255 })
+  @Index('idx_organizations_name_trgm', { synchronize: false })
   name: string;
 
   @Column({ name: 'owner_id', type: 'uuid' })
