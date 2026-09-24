@@ -9,6 +9,7 @@ import { ApiKeyModule } from './modules/apiKey/api-key.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CommentsModule } from './modules/comments/comments.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { PerformanceLogModule } from './modules/logs/performance/performance.module.js';
 import { OrganizationMembersModule } from './modules/organization_members/organization_member.module.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
 import { ProjectMemberModule } from './modules/project_members/projectMember.module.js';
@@ -67,6 +68,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     TicketsModule,
     CommentsModule,
 
+    PerformanceLogModule,
     WebhookModules,
     AuthModule,
     ApiKeyModule,
