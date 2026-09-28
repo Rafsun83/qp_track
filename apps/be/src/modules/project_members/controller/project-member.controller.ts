@@ -26,10 +26,12 @@ export class ProjectMemberController {
   addMemberInproject(
     @Param('projectId') projectId: string,
     @Body() projectMemberInfo: ProjectMemberAddDto,
+    @CurrentUser() currentUser: CurrentUserDto,
   ) {
     return this.projectMemberService.addProjectMember(
       projectId,
       projectMemberInfo,
+      currentUser.sub,
     );
   }
 
@@ -54,11 +56,13 @@ export class ProjectMemberController {
     @Param('projectId') projectId: string,
     @Param('userId') userId: string,
     @Body() data: ProjectMemberUpdateDto,
+    @CurrentUser() currentUser: CurrentUserDto,
   ) {
     return this.projectMemberService.updateProjectMemberRole(
       projectId,
       userId,
       data,
+      currentUser.sub,
     );
   }
 }

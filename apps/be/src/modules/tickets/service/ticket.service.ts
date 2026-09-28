@@ -3,8 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
+import { AuditAction } from '../../logs/audit/enum/audit-action.enum.js';
+import { AuditLogService } from '../../logs/audit/service/audit-log.service.js';
 import { ProjectMember } from '../../project_members/entity/project-member.entity.js';
 import { ProjectRole } from '../../project_members/enum/project-role.enum.js';
 import { Sprint } from '../../sprint/entity/sprint.entity.js';
@@ -26,6 +28,11 @@ export class TicketService {
 
     @InjectRepository(Sprint)
     private readonly sprintRepository: Repository<Sprint>,
+
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
+
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   private async requireMembership(
@@ -71,14 +78,27 @@ export class TicketService {
     this.requireManageRole(membership, 'create');
     await this.assertSprintBelongsToProject(projectId, sprintId);
 
-    // Whoever creates the ticket is also its initial assignee; reassignment
-    // happens later through the update API.
-    return this.ticketRepository.save({
-      ...data,
-      projectId,
-      sprintId,
-      createdBy: currentUserId,
-      assigneeId: currentUserId,
+    return this.dataSource.transaction(async (manager) => {
+      // Whoever creates the ticket is also its initial assignee; reassignment
+      // happens later through the update API.
+      const ticket = await manager.save(Ticket, {
+        ...data,
+        projectId,
+        sprintId,
+        createdBy: currentUserId,
+        assigneeId: currentUserId,
+      });
+
+      await this.auditLogService.record(manager, {
+        actorId: currentUserId,
+        action: AuditAction.TICKET_CREATED,
+        entityType: 'ticket',
+        entityId: ticket.id,
+        projectId,
+        after: ticket,
+      });
+
+      return ticket;
     });
   }
 
@@ -119,17 +139,6 @@ export class TicketService {
     const membership = await this.requireMembership(projectId, currentUserId);
     this.requireManageRole(membership, 'update');
 
-    const ticket = await this.ticketRepository.findOne({
-      where: { id: ticketId, projectId, sprintId },
-    });
-    if (!ticket) {
-      throw new NotFoundException('Ticket not found');
-    }
-
-    if (data.sprintId) {
-      await this.assertSprintBelongsToProject(projectId, data.sprintId);
-    }
-
     // `data` is an UpdateTicketDto class instance: every declared-but-omitted
     // optional field exists as an own property with value `undefined` (ES
     // class-field semantics), so a plain Object.assign would wipe out the
@@ -137,9 +146,35 @@ export class TicketService {
     const providedFields = Object.fromEntries(
       Object.entries(data).filter(([, value]) => value !== undefined),
     );
-    Object.assign(ticket, providedFields);
 
-    return this.ticketRepository.save(ticket);
+    return this.dataSource.transaction(async (manager) => {
+      const ticket = await manager.findOne(Ticket, {
+        where: { id: ticketId, projectId, sprintId },
+      });
+      if (!ticket) {
+        throw new NotFoundException('Ticket not found');
+      }
+
+      if (data.sprintId) {
+        await this.assertSprintBelongsToProject(projectId, data.sprintId);
+      }
+
+      const before = { ...ticket };
+      Object.assign(ticket, providedFields);
+      const saved = await manager.save(ticket);
+
+      await this.auditLogService.record(manager, {
+        actorId: currentUserId,
+        action: AuditAction.TICKET_UPDATED,
+        entityType: 'ticket',
+        entityId: ticketId,
+        projectId,
+        before,
+        after: saved,
+      });
+
+      return saved;
+    });
   }
 
   async deleteTicket(
@@ -151,13 +186,24 @@ export class TicketService {
     const membership = await this.requireMembership(projectId, currentUserId);
     this.requireManageRole(membership, 'delete');
 
-    const result = await this.ticketRepository.delete({
-      id: ticketId,
-      projectId,
-      sprintId,
+    await this.dataSource.transaction(async (manager) => {
+      const ticket = await manager.findOne(Ticket, {
+        where: { id: ticketId, projectId, sprintId },
+      });
+      if (!ticket) {
+        throw new NotFoundException('Ticket not found');
+      }
+
+      await manager.delete(Ticket, { id: ticketId, projectId, sprintId });
+
+      await this.auditLogService.record(manager, {
+        actorId: currentUserId,
+        action: AuditAction.TICKET_DELETED,
+        entityType: 'ticket',
+        entityId: ticketId,
+        projectId,
+        before: ticket,
+      });
     });
-    if (result.affected === 0) {
-      throw new NotFoundException('Ticket not found');
-    }
   }
 }
