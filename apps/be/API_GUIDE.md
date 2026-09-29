@@ -1,8 +1,53 @@
 # API Guide
 
-Base URL (local dev): `http://localhost:3001` (or whatever `PORT` is set to in `.env` / `process.env.PORT`, default `3000`).
+Base URL (local dev): `http://localhost:3001` — the port comes from `PORT` (default `3000` if unset). Config is loaded by `@nestjs/config` from `.env.${NODE_ENV}` (`.env.development` when `NODE_ENV` is unset); see `.env.example` for every variable (`PORT`, `CORS_ORIGIN`, `DB_*`, `JWT_SECRET`, `JWT_EXPIRES_IN`).
+
+Interactive Swagger docs are served at `/docs` (e.g. `http://localhost:3001/docs`), with an "Authorize" button for the bearer token.
 
 Every request/response body is JSON. Send `Content-Type: application/json` on any request with a body.
+
+## Endpoint index
+
+| Method | Path | Auth |
+|---|---|---|
+| `POST` | `/auth/login` | Public |
+| `POST` | `/auth/register` | Public |
+| `POST` | `/api-key` | JWT |
+| `GET` | `/api-key/latest` | JWT |
+| `DELETE` | `/api-key/delete` | JWT |
+| `GET` | `/api/users` | JWT |
+| `GET` | `/api/users/me` | JWT |
+| `GET` | `/api/users/:id` | JWT |
+| `PATCH` | `/api/users/:id` | JWT (self only) |
+| `DELETE` | `/api/users/:id` | JWT |
+| `POST` | `/api/organizations` | JWT |
+| `GET` | `/api/organizations` | JWT |
+| `GET` | `/api/organizations/:organizationId` | JWT |
+| `PATCH` | `/api/organizations/:organizationId` | JWT + org `OWNER`/`ADMIN` |
+| `POST` | `/api/organizations/:organizationId/members` | JWT + org `OWNER`/`ADMIN` |
+| `GET` | `/api/organizations/:organizationId/members` | JWT |
+| `DELETE` | `/api/organizations/:organizationId/members/:userId` | JWT + org `OWNER`/`ADMIN` |
+| `DELETE` | `/api/organizations/:organizationId/members/:userId/leave` | JWT + org `ADMIN`/`MEMBER` |
+| `GET` | `/api/organizations/:organizationId/audit-logs` | JWT |
+| `POST` | `/api/organization/:organizationId/project` | JWT + org `OWNER`/`ADMIN` |
+| `GET` | `/api/organization/:organizationId/project` | JWT |
+| `GET` | `/api/organization/:organizationId/project/:id` | JWT |
+| `PATCH` | `/api/organization/:organizationId/project/:id` | JWT + org `OWNER`/`ADMIN` |
+| `DELETE` | `/api/organization/:organizationId/project/:id` | JWT + org `OWNER` + project `LEAD` |
+| `POST` | `/api/project/:projectId/member` | JWT |
+| `PATCH` | `/api/project/:projectId/member/:userId` | JWT |
+| `DELETE` | `/api/project/:projectId/member/:userId` | JWT + project `LEAD` |
+| `POST`/`GET` | `/api/project/:projectId/sprint` | JWT + project member |
+| `GET`/`PUT`/`DELETE` | `/api/project/:projectId/sprint/:sprintId` | JWT + project member |
+| `POST`/`GET` | `/api/project/:projectId/sprint/:sprintId/ticket` | JWT + project member |
+| `GET`/`PUT`/`DELETE` | `/api/project/:projectId/sprint/:sprintId/ticket/:ticketId` | JWT + project member |
+| `POST`/`GET` | `.../ticket/:ticketId/comment` | JWT + project member |
+| `GET`/`PUT`/`DELETE` | `.../ticket/:ticketId/comment/:commentId` | JWT + project member (author for writes) |
+| `POST` | `/webhook/response` | API key |
+| `POST` | `/webhook/response/test` | API key |
+| `GET` | `/api/survey-response` | JWT |
+| `GET` | `/api/performance-logs` | JWT |
+| `GET` | `/health` | JWT |
 
 ## Response envelope
 
@@ -45,7 +90,7 @@ Every "Success" example throughout this guide has been updated to show this actu
 
 ## Authentication — read this first
 
-Every endpoint in this API requires a JWT **except** the two marked "Public" below (`POST /auth/login`, `POST /auth/register`). This is enforced globally by `AuthGuard` (`apps/be/src/modules/auth/guard/auth.guard.ts`) — there's no per-route opt-in needed for protection; a route is only public if it's explicitly decorated `@Public()`.
+Every endpoint in this API requires a JWT **except** the routes decorated `@Public()`: `POST /auth/login` and `POST /auth/register` (fully public), plus `POST /webhook/response` and `POST /webhook/response/test` (which skip the JWT but require an `x-api-key` header via `ApiKeyGuard` instead). This is enforced globally by `AuthGuard` (`apps/be/src/modules/auth/guard/auth.guard.ts`, registered as an `APP_GUARD`) — there's no per-route opt-in needed for protection. Note that `GET /health` is **not** `@Public()`, so it needs a JWT too.
 
 To call a protected endpoint, add the token you got from login as a header:
 
@@ -54,17 +99,20 @@ Authorization: Bearer <access_token>
 ```
 
 - Missing header, malformed header (not `Bearer <token>`), or an invalid/expired token → `401 Unauthorized`.
-- The token expires (`expiresIn` configured in `app.module.ts`, currently `1h`) — log in again to get a new one once it expires.
+- The token expires after `JWT_EXPIRES_IN` (default `1h`, read in `apps/be/src/config/app.config.ts`) — log in again to get a new one once it expires.
 
 ### Role-based authorization (organization endpoints)
 
 Some organization-scoped endpoints additionally require a **role**, enforced by a second global guard, `RolesGuard` (`apps/be/src/modules/auth/guard/roles.guard.ts`), applied via the `@Roles(...)` decorator (`apps/be/src/modules/auth/decorator/roles.decorator.ts`).
 
 Important: a role is **not** part of the JWT. It's a property of the caller's `organization_members` row for the specific organization in the URL, so `RolesGuard` resolves it fresh on every request:
-1. It reads the organization id from the route's **`:organizationId`** request param specifically (`request.params.organizationId`) — not just "whatever the first path param is". A route path whose organization segment is named anything else (e.g. `:id`) won't be picked up by this at all.
+1. It reads the organization id from the route's **`:organizationId`** request param specifically (`request.params.organizationId`) — not just "whatever the first path param is". A route path whose organization segment is named anything else (e.g. `:id`) won't be picked up by this at all. All organization routes now name it `:organizationId` (they used to use `:id`, which made every `@Roles(...)` route under `/api/organizations/:id` fail with 403).
 2. It reads the caller's user id from the JWT (`request.user.sub`).
 3. It looks up that `(organizationId, userId)` pair in `organization_members` to get the caller's actual role (`OWNER` / `ADMIN` / `MEMBER`) for *that* organization.
 4. It checks that role against whatever `@Roles(...)` lists on the route.
+5. On success it attaches the membership row to the request as `request.organizationMember`, which some handlers (e.g. the member-removal routes) read to know the caller's own role.
+
+Error messages from `RolesGuard`: `403 "You are not a member of this organization"` (no membership row) or `403 "You do not have permission to perform this action"` (member, but wrong role).
 
 Consequences:
 - If a route has **no** `@Roles(...)` decorator, `RolesGuard` is a no-op — a valid JWT is the only requirement, even though the route is nested under `/organizations/:organizationId`. It does **not** independently verify the caller is even a member of that organization.
@@ -218,16 +266,26 @@ curl -X POST http://localhost:3001/api-key \
 
 No body or params — the key to revoke is looked up **by `userId` alone**, not by key id. If a user has more than one key, this revokes whichever one the lookup happens to return first, not a specific one you choose. There's currently no way to target one key among several by id.
 
-**Success — `200 OK`:** message `"API key revoked successfully"`, `data: null`.
+**Success — `200 OK`:** message `"API key revoked successfully"`. `data` is the revoked key's metadata row (the service returns the saved entity), now with `revokedAt` set. `hashedKey` is stripped by `@Exclude()` + the global `ClassSerializerInterceptor`:
 
 ```json
 {
   "statusCode": 200,
   "message": "API key revoked successfully",
-  "data": null,
+  "data": {
+    "id": "3f9a2b10-...",
+    "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "prefix": "sk-live_6928426a",
+    "label": "my first key",
+    "createdAt": "2026-09-14T02:07:28.920Z",
+    "lastUpdatedAt": "2026-09-22T10:28:39.207Z",
+    "revokedAt": "2026-09-22T10:28:39.207Z"
+  },
   "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
+
+Calling it again after a key is already revoked still succeeds: the lookup doesn't filter out revoked keys, so it just sets `revokedAt` again.
 
 **Failure — `404 Not Found`:** the user has no matching API key to revoke.
 
@@ -280,13 +338,6 @@ curl http://localhost:3001/api-key/latest \
   -H "Authorization: Bearer <token>"
 ```
 
-**Example:**
-
-```bash
-curl http://localhost:3001/api-key/latest \
-  -H "Authorization: Bearer <token>"
-```
-
 ---
 
 ## `GET /api/users`
@@ -295,8 +346,8 @@ curl http://localhost:3001/api-key/latest \
 
 | Query param  | Type   | Behavior                                                                 |
 |--------------|--------|---------------------------------------------------------------------------|
-| `userName`   | string | **Search** — matches if `userName` *contains* this text, case-insensitive |
-| `loginCount` | number | **Filter** — matches users whose `loginCount` is *exactly* this value     |
+| `userName`   | string | **Search** — matches if `userName` *starts with* this text, case-insensitive (`ILIKE 'text%'`, backed by a `pg_trgm` index) |
+| `loginCount` | number | **Filter** — matches users whose `loginCount` is *exactly* this value (integer, `>= 0`) |
 
 Both are optional and combinable — passing both ANDs the conditions together (must match both).
 
@@ -309,7 +360,7 @@ Passing an unknown query param, or a non-numeric `loginCount`, returns `400 Bad 
 curl http://localhost:3001/api/users \
   -H "Authorization: Bearer <token>"
 
-# Search: userName contains "jane" (matches "Jane", "janedoe", "JANEsmith", ...)
+# Search: userName starts with "jane" (matches "Jane", "janedoe", "JANEsmith" — but not "maryjane")
 curl "http://localhost:3001/api/users?userName=jane" \
   -H "Authorization: Bearer <token>"
 
@@ -347,6 +398,23 @@ An empty array `[]` for `data` (not an error) if nothing matches.
 
 ---
 
+## `GET /api/users/me`
+
+**Requires auth (JWT).** Returns the caller's own profile. The user id comes from the token (`sub`), so there's no path param.
+
+`data` has the same shape as [`GET /api/users/:id`](#get-apiusersid) below, including `memberships`.
+
+**Success — `200 OK`:** message `"Current user fetched successfully"`.
+
+**Example:**
+
+```bash
+curl http://localhost:3001/api/users/me \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 ## `GET /api/users/:id`
 
 **Requires auth (JWT).** Fetches a single user by their `id` (UUID). This used to be API-key-only (`@Public()` + `ApiKeyGuard`); both have been removed from the route, so it now falls under the global `AuthGuard` like every other non-public endpoint — send a bearer token, not an `x-api-key` header.
@@ -360,15 +428,96 @@ curl http://localhost:3001/api/users/df7db73d-f047-44d5-9d51-62ec043bfe0e \
   -H "Authorization: Bearer <token>"
 ```
 
-**Success — `200 OK`:** message `"User fetched successfully"`. `data` is the user object, or `null` if no user has that id (the endpoint doesn't 404 on a missing id):
+**Success — `200 OK`:** message `"User fetched successfully"`. `data` is the user object, or `null` if no user has that id (the endpoint doesn't 404 on a missing id). The user comes with `memberships` loaded: each organization membership, that membership's `organization`, and that organization's `members` (the member rows only, without nested `user`):
 
 ```json
 {
   "statusCode": 200,
   "message": "User fetched successfully",
-  "data": { "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e", "name": "Jane Doe", "...": "..." },
+  "data": {
+    "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+    "name": "Jane Doe",
+    "loginCount": 3,
+    "email": "jane@example.com",
+    "location": "Dhaka",
+    "userName": "janedoe",
+    "createdAt": "2026-09-10T02:07:28.920Z",
+    "memberships": [
+      {
+        "id": "3f9a2b10-...",
+        "organizationId": "b1a2c3d4-...",
+        "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+        "role": "OWNER",
+        "joinedAt": "2026-09-16T02:07:28.920Z",
+        "organization": {
+          "id": "b1a2c3d4-...",
+          "name": "Acme Inc",
+          "ownerId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+          "isActive": true,
+          "createdAt": "2026-09-16T02:07:28.920Z",
+          "updatedAt": "2026-09-16T02:07:28.920Z",
+          "members": [ { "id": "3f9a2b10-...", "userId": "df7db73d-...", "role": "OWNER", "...": "..." } ]
+        }
+      }
+    ]
+  },
   "timestamp": "2026-09-22T10:28:39.207Z"
 }
+```
+
+---
+
+## `PATCH /api/users/:id`
+
+**Requires auth (JWT), self only.** The handler compares `:id` to the caller's token `sub`. Updating anyone else fails with `403 Forbidden, "You can only update your own profile"`.
+
+**Body (`UpdateUserDto`):**
+
+| Field      | Type   | Rules               |
+|------------|--------|---------------------|
+| `location` | string | required, non-empty |
+
+`location` is the only field you can update. Sending `name`, `email`, `userName`, `password` or anything else is rejected with `400`.
+
+**Success — `200 OK`:** message `"User updated successfully"`. `data` is the updated user row (no `memberships`, no password).
+
+**Failure:**
+- `400 Bad Request`: missing/empty `location`, or an unknown field.
+- `401 Unauthorized`: missing/invalid/expired bearer token.
+- `403 Forbidden`: `:id` is not the caller's own id.
+- `404 Not Found`: no user with that id (`"User not found"`).
+
+**Example:**
+
+```bash
+curl -X PATCH http://localhost:3001/api/users/df7db73d-f047-44d5-9d51-62ec043bfe0e \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"location": "Chattogram"}'
+```
+
+---
+
+## `DELETE /api/users/:id`
+
+**Requires auth (JWT) only.**
+
+> ⚠️ Unlike `PATCH` above, there is **no ownership check** here: any authenticated user can delete **any** user by id. Add the same `user.sub !== id` check (or an admin-only guard) before relying on this route.
+
+No body.
+
+**Success — `200 OK`:** message `"User deleted successfully"`, `data: null`.
+
+**Failure:**
+- `401 Unauthorized`: missing/invalid/expired bearer token.
+- `404 Not Found`: no user with that id (`"User not found"`).
+- `500 Internal Server Error`: the user still owns an organization. `organizations.owner_id` is `ON DELETE RESTRICT`, so Postgres rejects the delete and the error isn't caught. (Their `organization_members` rows are `ON DELETE CASCADE` and just disappear.)
+
+**Example:**
+
+```bash
+curl -X DELETE http://localhost:3001/api/users/df7db73d-f047-44d5-9d51-62ec043bfe0e \
+  -H "Authorization: Bearer <token>"
 ```
 
 ---
@@ -436,9 +585,15 @@ curl -X POST http://localhost:3001/api/organizations \
 
 ## `GET /api/organizations`
 
-**Requires auth.** No `@Roles(...)`. Lists organizations, but **only ones the caller owns** (`WHERE ownerId = <caller's id>`) — organizations where the caller is merely a `MEMBER` or `ADMIN` (not the `OWNER`) are **not** returned by this endpoint.
+**Requires auth.** No `@Roles(...)`. Lists every organization the caller **is a member of**, in any role (`OWNER`, `ADMIN` or `MEMBER`). This used to return only organizations the caller owned.
 
-**Success — `200 OK`:** message `"Organizations fetched successfully"`. `data` is an array of organizations, each with `members` (and each member's `user`) and `owner` loaded, e.g.:
+| Query param | Type   | Behavior |
+|-------------|--------|----------|
+| `name`      | string | optional **search**: organization `name` *starts with* this text, case-insensitive (`ILIKE 'text%'`, backed by a `pg_trgm` index) |
+
+Any other query param returns `400 Bad Request`.
+
+**Success — `200 OK`:** message `"Organizations fetched successfully"`. `data` is an array of organizations, each with **all** of its `members` rows loaded (not just the caller's). The members' `user` objects and the `owner` are **not** loaded here:
 
 ```json
 {
@@ -452,26 +607,32 @@ curl -X POST http://localhost:3001/api/organizations \
       "isActive": true,
       "createdAt": "2026-09-16T02:07:28.920Z",
       "updatedAt": "2026-09-16T02:07:28.920Z",
-      "owner": { "id": "df7db73d-f047-44d5-9d51-62ec043bfe0e", "name": "Jane Doe", "...": "..." },
-      "members": [ { "id": "3f9a2b10-...", "role": "OWNER", "user": { "...": "..." } } ]
+      "members": [
+        { "id": "3f9a2b10-...", "organizationId": "b1a2c3d4-...", "userId": "df7db73d-...", "role": "OWNER", "joinedAt": "2026-09-16T02:07:28.920Z" }
+      ]
     }
   ],
   "timestamp": "2026-09-22T10:28:39.207Z"
 }
 ```
 
-An empty array `[]` for `data` (not an error) if the caller doesn't own any organization.
+An empty array `[]` for `data` (not an error) if the caller isn't in any organization, or none match `name`.
 
 **Example:**
 
 ```bash
+# All my organizations
 curl http://localhost:3001/api/organizations \
+  -H "Authorization: Bearer <token>"
+
+# Search by name prefix
+curl "http://localhost:3001/api/organizations?name=acme" \
   -H "Authorization: Bearer <token>"
 ```
 
 ---
 
-## `GET /api/organizations/:id`
+## `GET /api/organizations/:organizationId`
 
 **Requires auth (JWT) only.** No `@Roles(...)` and no membership check of any kind — any authenticated user can fetch **any** organization by id, whether or not they belong to it, and the response includes its full member list.
 
@@ -488,9 +649,9 @@ curl http://localhost:3001/api/organizations/b1a2c3d4-... \
 
 ---
 
-## `PATCH /api/organizations/:id`
+## `PATCH /api/organizations/:organizationId`
 
-**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)` — the caller must be a member of organization `:id` with role `OWNER` or `ADMIN`.
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)` — the caller must be a member of organization `:organizationId` with role `OWNER` or `ADMIN`.
 
 **Body (`UpdateOrganizationDto`):**
 
@@ -535,9 +696,9 @@ curl -X PATCH http://localhost:3001/api/organizations/b1a2c3d4-... \
 
 ---
 
-## `POST /api/organizations/:id/members`
+## `POST /api/organizations/:organizationId/members`
 
-**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)` — the caller must be a member of organization `:id` with role `OWNER` or `ADMIN` (this used to be commented out, allowing any authenticated user through; that's no longer the case). There is still no server-side check that `role` is one of `OWNER`/`ADMIN`/`MEMBER` (the DTO only validates it's a non-empty string), so an invalid role value will pass validation and only fail later at the database layer.
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)` — the caller must be a member of organization `:organizationId` with role `OWNER` or `ADMIN` (this used to be commented out, allowing any authenticated user through; that's no longer the case). There is still no server-side check that `role` is one of `OWNER`/`ADMIN`/`MEMBER` (the DTO only validates it's a non-empty string), so an invalid role value will pass validation and only fail later at the database layer.
 
 **Body (`OrganizationMemberCreateDto`):**
 
@@ -580,7 +741,7 @@ curl -X POST http://localhost:3001/api/organizations/b1a2c3d4-.../members \
 
 ---
 
-## `GET /api/organizations/:id/members`
+## `GET /api/organizations/:organizationId/members`
 
 **Requires auth (JWT) only.** No `@Roles(...)` and no membership check — any authenticated user can list any organization's members.
 
@@ -621,9 +782,9 @@ curl http://localhost:3001/api/organizations/b1a2c3d4-.../members \
 
 ---
 
-## `DELETE /api/organizations/:id/members/:userId`
+## `DELETE /api/organizations/:organizationId/members/:userId`
 
-**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)` — a caller whose own membership role in organization `:id` is `OWNER` or `ADMIN` can call this; a plain `MEMBER` is rejected with `403 Forbidden` by `RolesGuard` before the handler runs (this used to be `OWNER`-only — `ADMIN` was added since).
+**Requires auth + role.** `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)` — a caller whose own membership role in organization `:organizationId` is `OWNER` or `ADMIN` can call this; a plain `MEMBER` is rejected with `403 Forbidden` by `RolesGuard` before the handler runs (this used to be `OWNER`-only — `ADMIN` was added since).
 
 No body. `userId` in the path is the member being removed. The handler now blocks **self-removal** instead: if `userId` equals the caller's own id, it throws `403 Forbidden, "You can not delete yourself"` regardless of role — including for an `OWNER` trying to remove themselves. There's still no separate protection against an `ADMIN` removing the sole remaining `OWNER` (any other user id is fair game), and no ownership-transfer flow.
 
@@ -655,9 +816,9 @@ curl -X DELETE http://localhost:3001/api/organizations/b1a2c3d4-.../members/df7d
 
 ---
 
-## `DELETE /api/organizations/:id/members/:userId/leave`
+## `DELETE /api/organizations/:organizationId/members/:userId/leave`
 
-**Requires auth + role.** `@Roles(OrganizationRole.ADMIN, OrganizationRole.MEMBER)` — the caller's own membership role in organization `:id` must be `ADMIN` or `MEMBER`; an `OWNER` calling this route is rejected with `403 Forbidden` by `RolesGuard` (there's currently no "leave as owner" or ownership-transfer flow).
+**Requires auth + role.** `@Roles(OrganizationRole.ADMIN, OrganizationRole.MEMBER)` — the caller's own membership role in organization `:organizationId` must be `ADMIN` or `MEMBER`; an `OWNER` calling this route is rejected with `403 Forbidden` by `RolesGuard` (there's currently no "leave as owner" or ownership-transfer flow).
 
 > ⚠️ The handler (`leaveMemberFromOrganization`) now checks `:userId` against the caller for one of the two roles, but not both: if the caller's own role is `MEMBER` and `:userId` is **not** their own id, it throws `403 Forbidden, "You can't happening this action as member."` (typo included, verbatim from source) — so a plain `MEMBER` can only use this route on themselves. An `ADMIN` caller has no such check at all and can still remove **any** other member (including another `ADMIN`) through this route, not just themselves — that part of the original "leave" bug remains.
 
@@ -686,6 +847,96 @@ No body.
 
 ```bash
 curl -X DELETE http://localhost:3001/api/organizations/b1a2c3d4-.../members/df7db73d-f047-44d5-9d51-62ec043bfe0e/leave \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## `GET /api/organizations/:organizationId/audit-logs`
+
+**Requires auth (JWT) only.** Returns the audit trail ("who changed what") for one organization, newest first, paginated.
+
+> ⚠️ `@Roles(OrganizationRole.OWNER, OrganizationRole.ADMIN)` is commented out in `AuditLogController`, so right now **any authenticated user can read any organization's audit log**, including the before/after snapshots. Re-enable it before exposing this route.
+
+### What gets recorded
+
+`AuditLogService.record()` writes a row **inside the same transaction** as the change, so the log entry and the change commit or roll back together. The `audit_logs` table is append-only: rows are never updated or deleted. Current producers:
+
+| `action` | `entityType` | Written by | `before` | `after` |
+|---|---|---|---|---|
+| `TICKET_CREATED` | `ticket` | `POST .../ticket` | `null` | new ticket |
+| `TICKET_UPDATED` | `ticket` | `PUT .../ticket/:ticketId` | ticket before | ticket after |
+| `TICKET_DELETED` | `ticket` | `DELETE .../ticket/:ticketId` | deleted ticket | `null` |
+| `PROJECT_MEMBER_ADDED` | `project_member` | `POST /api/project/:projectId/member` | `null` | new membership |
+| `PROJECT_MEMBER_ROLE_UPDATED` | `project_member` | `PATCH /api/project/:projectId/member/:userId` | membership before | membership after |
+| `PROJECT_MEMBER_REMOVED` | `project_member` | `DELETE /api/project/:projectId/member/:userId` | removed membership | `null` |
+
+Nothing else (organizations, projects, sprints, comments, users) is audited yet. `organizationId` on each row is looked up from the project, and `password` / `hashedKey` are always removed from snapshots.
+
+### Query params (`FilterAuditLogDto`, all optional)
+
+| Param | Type | Behavior |
+|---|---|---|
+| `action` | enum | exact match, one of the `action` values above |
+| `entityType` | string | exact match, e.g. `ticket`, `project_member` |
+| `entityId` | UUID | exact match: the history of one ticket / membership |
+| `actorId` | UUID | exact match: everything one user did |
+| `projectId` | UUID | exact match: limit to one project |
+| `from` | ISO 8601 date | `createdAt >= from` |
+| `to` | ISO 8601 date | `createdAt <= to` |
+| `page` | int | `>= 1`, default `1` |
+| `limit` | int | `1`–`100`, default `20` |
+
+Filters are ANDed together. Invalid values (non-UUID ids, unknown `action`, `limit > 100`) or unknown params return `400`.
+
+**Success — `200 OK`:** message `"Audit logs fetched successfully"`. `data` is a page object, not a bare array:
+
+```json
+{
+  "statusCode": 200,
+  "message": "Audit logs fetched successfully",
+  "data": {
+    "items": [
+      {
+        "id": "e4c1a9d2-...",
+        "actorId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+        "action": "TICKET_UPDATED",
+        "entityType": "ticket",
+        "entityId": "c7de719b-ed89-4396-9483-287e1c0e06f3",
+        "organizationId": "b1a2c3d4-...",
+        "projectId": "5c2b1f4a-...",
+        "before": { "id": "c7de719b-...", "status": "TODO", "...": "..." },
+        "after": { "id": "c7de719b-...", "status": "IN_PROGRESS", "...": "..." },
+        "createdAt": "2026-09-28T09:12:44.018Z"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 20
+  },
+  "timestamp": "2026-09-28T09:15:00.000Z"
+}
+```
+
+`total` is the number of matching rows across all pages. `actorId` is `null` when the change wasn't made by a user (e.g. system or webhook).
+
+**Failure:**
+- `400 Bad Request`: invalid or unknown query param.
+- `401 Unauthorized`: missing/invalid/expired bearer token.
+
+**Example:**
+
+```bash
+# Latest 20 entries for the organization
+curl http://localhost:3001/api/organizations/b1a2c3d4-.../audit-logs \
+  -H "Authorization: Bearer <token>"
+
+# Full history of one ticket
+curl "http://localhost:3001/api/organizations/b1a2c3d4-.../audit-logs?entityType=ticket&entityId=c7de719b-ed89-4396-9483-287e1c0e06f3" \
+  -H "Authorization: Bearer <token>"
+
+# Everything one user did in September, page 2
+curl "http://localhost:3001/api/organizations/b1a2c3d4-.../audit-logs?actorId=df7db73d-f047-44d5-9d51-62ec043bfe0e&from=2026-09-01T00:00:00Z&to=2026-09-30T23:59:59Z&page=2&limit=50" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -760,9 +1011,9 @@ curl -X POST http://localhost:3001/api/organization/b1a2c3d4-.../project \
 
 ### `GET /api/organization/:organizationId/project`
 
-**Requires auth + role.** `@Roles(OrganizationRole.OWNER)` — **`OWNER` only**, notably stricter than every other project/organization list-type endpoint above (`ADMIN` cannot list an organization's projects through this route).
+**Requires auth (JWT) only.** The old `@Roles(OrganizationRole.OWNER)` is now commented out. The list is scoped **per user**: it returns only the projects in `:organizationId` where the caller has a `project_members` row. An org `OWNER` who isn't on a project won't see it here.
 
-**Success — `200 OK`:** message `"Projects fetched successfully"`. `data` is an array of projects with `members` loaded (no nested `project` on each member this time — just the member rows):
+**Success — `200 OK`:** message `"Projects fetched successfully"`. `data` is an array of projects with `members` loaded. Because the membership filter and the relation use the same join, `members` contains **only the caller's own row**, not the project's full member list:
 
 ```json
 {
@@ -787,9 +1038,9 @@ curl -X POST http://localhost:3001/api/organization/b1a2c3d4-.../project \
 }
 ```
 
-**Failure:**
-- `401 Unauthorized` — missing/invalid/expired bearer token.
-- `403 Forbidden` — caller is not a member of the organization, or is a member but not the `OWNER`.
+An empty array `[]` for `data` if the caller isn't on any project in that organization.
+
+**Failure — `401 Unauthorized`:** missing/invalid/expired bearer token.
 
 **Example:**
 
@@ -802,7 +1053,7 @@ curl http://localhost:3001/api/organization/b1a2c3d4-.../project \
 
 ### `GET /api/organization/:organizationId/project/:id`
 
-**Requires auth (JWT) only.** No `@Roles(...)` and no membership check — any authenticated user can fetch any project by id/organization pair, same pattern as `GET /api/organizations/:id`.
+**Requires auth (JWT) only.** No `@Roles(...)` and no membership check — any authenticated user can fetch any project by id/organization pair, same pattern as `GET /api/organizations/:organizationId`.
 
 **Success — `200 OK`:** message `"Project fetched successfully"`. `data` is the project with `members` loaded, or `null` if no project matches that `(organizationId, id)` pair (no 404 on a missing id).
 
@@ -885,7 +1136,11 @@ curl -X DELETE http://localhost:3001/api/organization/b1a2c3d4-.../project/5c2b1
 
 ## Project Members
 
-Route prefix is singular here too — `/api/project/:projectId/member...`. None of these three routes currently carry `@Roles(...)` (it's commented out in source on the `POST`, and simply absent on the other two), and — per the [Role-based authorization](#role-based-authorization-organization-endpoints) note above — these routes have no `:organizationId` param to key off of even if `@Roles(...)` were added as-is. So today, **any authenticated user can add or change the role of a member on any project**, regardless of organization or project membership. The one exception is `DELETE` below, which now enforces a project-level check by hand (not via `@Roles`/`RolesGuard`): only a caller who is the target project's `LEAD` can remove a member.
+Route prefix is singular here too — `/api/project/:projectId/member...`. None of these three routes currently carry `@Roles(...)` (it's commented out in source on the `POST` and `PATCH`, and absent on `DELETE`), and — per the [Role-based authorization](#role-based-authorization-organization-endpoints) note above — these routes have no `:organizationId` param to key off of even if `@Roles(...)` were added as-is. So today, **any authenticated user can add or change the role of a member on any project**, regardless of organization or project membership. The one exception is `DELETE` below, which enforces a project-level check by hand (not via `@Roles`/`RolesGuard`): only a caller who is the target project's `LEAD` can remove a member.
+
+**One `LEAD` per project:** both `POST` and `PATCH` reject a change that would give the project a second `LEAD`, with `409 Conflict, "Project already has a LEAD"`. To hand over leadership, first change the current lead to another role, then promote the new one.
+
+**Audit:** all three routes write an [audit log](#get-apiorganizationsorganizationidaudit-logs) row in the same transaction (`PROJECT_MEMBER_ADDED` / `PROJECT_MEMBER_ROLE_UPDATED` / `PROJECT_MEMBER_REMOVED`), with the caller as `actorId`.
 
 ### `POST /api/project/:projectId/member`
 
@@ -920,6 +1175,7 @@ There's a DB-level `UNIQUE(projectId, userId)` constraint, but — unlike `Organ
 **Failure:**
 - `400 Bad Request` — missing/empty `userId` or `role`, or an unknown field.
 - `401 Unauthorized` — missing/invalid/expired bearer token.
+- `409 Conflict` — `role` is `LEAD` and the project already has one.
 - `500 Internal Server Error` — that user is already a member of this project (see above).
 
 **Example:**
@@ -994,7 +1250,8 @@ curl -X DELETE http://localhost:3001/api/project/5c2b1f4a-.../member/df7db73d-f0
 **Failure:**
 - `400 Bad Request` — missing `role`, an invalid enum value, or an unknown field.
 - `401 Unauthorized` — missing/invalid/expired bearer token.
-- `404 Not Found` — no member with that `userId` exists on this project.
+- `404 Not Found` — no member with that `userId` exists on this project (`"Project member not found"`).
+- `409 Conflict` — promoting to `LEAD` while another member is already `LEAD`.
 
 **Example:**
 
@@ -1201,6 +1458,8 @@ No `@Roles(...)` on any of these routes (no `:organizationId` param to key one o
 - On every route, `:sprintId` is additionally verified to belong to `:projectId` (`404 Not Found, "Sprint not found in this project"` otherwise) — you can't operate on a sprint from a different project just because you know its id.
 
 All single-ticket routes (`GET`/`PUT`/`DELETE .../ticket/:ticketId`) are scoped to `{ id: ticketId, projectId, sprintId }`, not just `id` — a `ticketId` that exists but under a different sprint (even within the same project) 404s instead of leaking across sprints.
+
+**Audit:** `POST`, `PUT` and `DELETE` each run in a transaction and write an [audit log](#get-apiorganizationsorganizationidaudit-logs) row (`TICKET_CREATED` / `TICKET_UPDATED` / `TICKET_DELETED`) with before/after snapshots of the ticket. Reads are not audited.
 
 ### `POST /api/project/:projectId/sprint/:sprintId/ticket`
 
@@ -1560,7 +1819,7 @@ curl -X DELETE http://localhost:3001/api/project/5c2b1f4a-.../sprint/9e1f7c3a-..
 
 ## `POST /webhook/response`
 
-**API key only** — same auth model as `GET /api/users/:id`: excluded from the global `AuthGuard`, protected instead by `ApiKeyGuard` via an `x-api-key` header (get one from `POST /api-key`). No JWT accepted.
+**API key only** — marked `@Public()` so the global `AuthGuard` skips it, and protected instead by `ApiKeyGuard` via an `x-api-key` header (get one from `POST /api-key`). No JWT accepted. These two webhook routes are the only API-key routes left.
 
 Intended as a webhook target (e.g. a survey platform posting responses back to you). The `userId` stored on the record is **not** taken from the body — it's resolved from whichever API key made the request.
 
@@ -1637,27 +1896,18 @@ curl -X POST http://localhost:3001/webhook/response/test \
 
 ## `GET /api/survey-response`
 
-**Requires auth** (JWT, via the global `AuthGuard` — no `@Public()` on this route, unlike the webhook above). Lists stored survey responses, with an optional filter.
+**Requires auth** (JWT, via the global `AuthGuard` — no `@Public()` on this route, unlike the webhook above). Lists **the caller's own** survey responses (those posted with an API key the caller owns), newest first.
 
-| Query param | Type   | Behavior                                                  |
-|-------------|--------|------------------------------------------------------------|
-| `userId`    | string | Filter — only responses whose `userId` matches exactly     |
-
-Omitting `userId` returns every survey response in the table (no ownership scoping — any authenticated user can list all responses, not just their own).
+The old `?userId=` filter is gone. The user id now always comes from the token, so you can't list another user's responses. Query params are ignored.
 
 **Example:**
 
 ```bash
-# All survey responses
 curl http://localhost:3001/api/survey-response \
-  -H "Authorization: Bearer <token>"
-
-# Only responses recorded under a specific userId (the id of whoever owned the API key that posted them)
-curl "http://localhost:3001/api/survey-response?userId=df7db73d-f047-44d5-9d51-62ec043bfe0e" \
   -H "Authorization: Bearer <token>"
 ```
 
-**Success — `200 OK`:** message `"Survey responses fetched successfully"`. `data` is an array of survey response records, e.g.:
+**Success — `200 OK`:** message `"Survey responses fetched successfully"`. `data` is an array of survey response records, ordered by `createdAt` descending, e.g.:
 
 ```json
 {
@@ -1675,7 +1925,136 @@ curl "http://localhost:3001/api/survey-response?userId=df7db73d-f047-44d5-9d51-6
 }
 ```
 
-An empty array `[]` for `data` (not an error) if nothing matches.
+An empty array `[]` for `data` (not an error) if the caller has no responses.
+
+---
+
+## `GET /api/performance-logs`
+
+**Requires auth (JWT) only.** Lists per-request timing records, newest first, paginated.
+
+> ⚠️ No role or ownership check: any authenticated user can read the logs for **every** user and endpoint in the system. Put this behind an admin-only guard before production.
+
+### How logs are recorded
+
+`PerformanceLoggingInterceptor` is registered globally (`APP_INTERCEPTOR` in `PerformanceLogModule`), so it times **every** request that reaches a controller and inserts one `api_performance_logs` row afterwards. The insert is fire-and-forget: it doesn't delay the response, and a failed insert is only logged to the console.
+
+- `endpoint` is the **route pattern**, not the concrete URL: `/api/project/:projectId/sprint`, not `/api/project/5c2b.../sprint`. So all calls to one route group together.
+- `userId` is the JWT `sub`, or `null` on public/API-key routes.
+- Requests rejected by a **guard** (e.g. `401` from `AuthGuard`, `403` from `RolesGuard`) are **not** logged, because guards run before interceptors. Validation errors (`400`) and exceptions thrown in handlers/services **are** logged, with their status code.
+- Calls to `GET /api/performance-logs` itself are logged too.
+
+### Query params (`FilterPerformanceLogDto`, all optional)
+
+| Param | Type | Behavior |
+|---|---|---|
+| `method` | string | exact match, one of `GET` / `POST` / `PUT` / `PATCH` / `DELETE` / `OPTIONS` / `HEAD` (uppercase) |
+| `endpoint` | string | route pattern **starts with** this text, case-insensitive, e.g. `/api/project` |
+| `userId` | string | exact match |
+| `statusCode` | int | exact match, e.g. `500` |
+| `minDurationMs` | int | `durationMs >= minDurationMs` (`>= 0`), for finding slow requests |
+| `from` | ISO 8601 date | `createdAt >= from` |
+| `to` | ISO 8601 date | `createdAt <= to` |
+| `page` | int | `>= 1`, default `1` |
+| `limit` | int | `1`–`100`, default `20` |
+
+**Success — `200 OK`:** message `"Performance logs fetched successfully"`. `data` is a page object:
+
+```json
+{
+  "statusCode": 200,
+  "message": "Performance logs fetched successfully",
+  "data": {
+    "items": [
+      {
+        "id": "8b0f3e61-...",
+        "method": "GET",
+        "endpoint": "/api/project/:projectId/sprint/:sprintId/ticket",
+        "durationMs": 42,
+        "userId": "df7db73d-f047-44d5-9d51-62ec043bfe0e",
+        "statusCode": 200,
+        "createdAt": "2026-09-28T09:12:44.018Z"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 20
+  },
+  "timestamp": "2026-09-28T09:15:00.000Z"
+}
+```
+
+**Failure:**
+- `400 Bad Request`: invalid or unknown query param (e.g. lowercase `method=get`, `limit=500`).
+- `401 Unauthorized`: missing/invalid/expired bearer token.
+
+**Example:**
+
+```bash
+# Requests that took 500 ms or more (results are always sorted newest first, not by duration)
+curl "http://localhost:3001/api/performance-logs?minDurationMs=500" \
+  -H "Authorization: Bearer <token>"
+
+# PUT requests under /api/project that failed with 500 today
+curl "http://localhost:3001/api/performance-logs?method=PUT&endpoint=/api/project&statusCode=500&from=2026-09-29T00:00:00Z" \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## `GET /health`
+
+**Requires auth (JWT).** It isn't marked `@Public()`, so the global `AuthGuard` applies. If you want an uptime monitor or load balancer to probe it without a token, add `@Public()` to `HealthController`.
+
+Uses `@nestjs/terminus` to check three things:
+
+| Key | Check | Fails when |
+|---|---|---|
+| `database` | TypeORM ping | Postgres is unreachable |
+| `memory_heap` | heap used | heap is over 300 MB |
+| `disk` | storage at `/` | disk is over 90% full |
+
+**Success — `200 OK`:** message `"Health check successful"`:
+
+```json
+{
+  "statusCode": 200,
+  "message": "Health check successful",
+  "data": {
+    "status": "ok",
+    "info": {
+      "database": { "status": "up" },
+      "memory_heap": { "status": "up" },
+      "disk": { "status": "up" }
+    },
+    "error": {},
+    "details": {
+      "database": { "status": "up" },
+      "memory_heap": { "status": "up" },
+      "disk": { "status": "up" }
+    }
+  },
+  "timestamp": "2026-09-28T09:15:00.000Z"
+}
+```
+
+**Failure — `503 Service Unavailable`:** one or more checks failed. This is an error response, so it is **not** wrapped in the envelope. Terminus returns its own body with `"status": "error"` and the failing checks listed under `error`:
+
+```json
+{
+  "status": "error",
+  "info": { "memory_heap": { "status": "up" }, "disk": { "status": "up" } },
+  "error": { "database": { "status": "down", "message": "..." } },
+  "details": { "...": "..." }
+}
+```
+
+**Example:**
+
+```bash
+curl http://localhost:3001/health \
+  -H "Authorization: Bearer <token>"
+```
 
 ---
 
@@ -1687,6 +2066,8 @@ These are for **error** responses only (anything a thrown exception produces) an
 |--------|------|---------------|
 | `400`  | Validation failed, or an unknown/extra field was sent | `{"message": ["loginCount must be an integer number"], "error": "Bad Request", "statusCode": 400}` |
 | `401`  | No token, bad token format, expired/invalid token, or wrong login credentials | `{"message": "Unauthorized", "statusCode": 401}` |
-| `403`  | Valid token, but caller lacks the required organization role (see [Role-based authorization](#role-based-authorization-organization-endpoints)), or isn't a member of the organization at all | `{"message": "Only Owner can delete", "error": "Forbidden", "statusCode": 403}` |
-| `409`  | Duplicate `userName` on registration, or user already a member of an organization | `{"message": "userName is already taken", "statusCode": 409}` |
-| `500`  | Unexpected server error | `{"statusCode": 500, "message": "Internal server error"}` |
+| `403`  | Valid token, but caller lacks the required organization role (see [Role-based authorization](#role-based-authorization-organization-endpoints)), isn't a member of the organization/project, or is acting on someone else's resource (profile, comment) | `{"message": "You do not have permission to perform this action", "error": "Forbidden", "statusCode": 403}` |
+| `404`  | The target row doesn't exist (or exists under a different parent) | `{"message": "Ticket not found", "error": "Not Found", "statusCode": 404}` |
+| `409`  | Duplicate `userName` on registration, user already a member of an organization, or a second project `LEAD` | `{"message": "Project already has a LEAD", "error": "Conflict", "statusCode": 409}` |
+| `500`  | Unexpected server error, including uncaught DB constraint violations (duplicate project `key`, duplicate project member, deleting a user who owns an organization) | `{"statusCode": 500, "message": "Internal server error"}` |
+| `503`  | `GET /health` when a check fails | Terminus body, see [`GET /health`](#get-health) |
