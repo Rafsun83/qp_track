@@ -10,10 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@repo/shared-types": "*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3",
-    "@repo/shared-types": "*"
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

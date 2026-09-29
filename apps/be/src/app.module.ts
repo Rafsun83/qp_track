@@ -1,16 +1,19 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigType } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { createObserveModule } from '@nestjs/observe';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import appConfig from './config/app.config.js';
 import databaseConfig from './config/database.config.js';
+import redisConfig from './config/redis.config.js';
 import { ApiKeyModule } from './modules/apiKey/api-key.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CommentsModule } from './modules/comments/comments.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { AuditLogModule } from './modules/logs/audit/audit.module.js';
 import { PerformanceLogModule } from './modules/logs/performance/performance.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { OrganizationMembersModule } from './modules/organization_members/organization_member.module.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
 import { ProjectMemberModule } from './modules/project_members/projectMember.module.js';
@@ -33,8 +36,9 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: `.env.${process.env.NODE_ENV ?? 'development'}`,
-      load: [appConfig, databaseConfig],
+      load: [appConfig, databaseConfig, redisConfig],
     }),
+    EventEmitterModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [databaseConfig.KEY],
       useFactory: (dbConfig: ConfigType<typeof databaseConfig>) => ({
@@ -71,6 +75,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
     PerformanceLogModule,
     AuditLogModule,
+    NotificationsModule,
     WebhookModules,
     AuthModule,
     ApiKeyModule,

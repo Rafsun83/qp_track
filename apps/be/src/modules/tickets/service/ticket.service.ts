@@ -3,10 +3,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AuditAction } from '../../logs/audit/enum/audit-action.enum.js';
 import { AuditLogService } from '../../logs/audit/service/audit-log.service.js';
+import {
+  NotificationEvents,
+  type TicketUpdatedEvent,
+} from '../../notifications/events/notification.events.js';
 import { ProjectMember } from '../../project_members/entity/project-member.entity.js';
 import { ProjectRole } from '../../project_members/enum/project-role.enum.js';
 import { Sprint } from '../../sprint/entity/sprint.entity.js';
@@ -33,6 +38,8 @@ export class TicketService {
     private readonly dataSource: DataSource,
 
     private readonly auditLogService: AuditLogService,
+
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   private async requireMembership(
@@ -147,34 +154,46 @@ export class TicketService {
       Object.entries(data).filter(([, value]) => value !== undefined),
     );
 
-    return this.dataSource.transaction(async (manager) => {
-      const ticket = await manager.findOne(Ticket, {
-        where: { id: ticketId, projectId, sprintId },
-      });
-      if (!ticket) {
-        throw new NotFoundException('Ticket not found');
-      }
+    const { before, saved } = await this.dataSource.transaction(
+      async (manager) => {
+        const ticket = await manager.findOne(Ticket, {
+          where: { id: ticketId, projectId, sprintId },
+        });
+        if (!ticket) {
+          throw new NotFoundException('Ticket not found');
+        }
 
-      if (data.sprintId) {
-        await this.assertSprintBelongsToProject(projectId, data.sprintId);
-      }
+        if (data.sprintId) {
+          await this.assertSprintBelongsToProject(projectId, data.sprintId);
+        }
 
-      const before = { ...ticket };
-      Object.assign(ticket, providedFields);
-      const saved = await manager.save(ticket);
+        const before = { ...ticket };
+        Object.assign(ticket, providedFields);
+        const saved = await manager.save(ticket);
 
-      await this.auditLogService.record(manager, {
-        actorId: currentUserId,
-        action: AuditAction.TICKET_UPDATED,
-        entityType: 'ticket',
-        entityId: ticketId,
-        projectId,
-        before,
-        after: saved,
-      });
+        await this.auditLogService.record(manager, {
+          actorId: currentUserId,
+          action: AuditAction.TICKET_UPDATED,
+          entityType: 'ticket',
+          entityId: ticketId,
+          projectId,
+          before,
+          after: saved,
+        });
 
-      return saved;
-    });
+        return { before, saved };
+      },
+    );
+
+    // Emitted only after commit, so a rolled-back update never notifies.
+    this.eventEmitter.emit(NotificationEvents.TICKET_UPDATED, {
+      actorId: currentUserId,
+      projectId,
+      before,
+      after: saved,
+    } satisfies TicketUpdatedEvent);
+
+    return saved;
   }
 
   async deleteTicket(

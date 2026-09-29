@@ -4,10 +4,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AuditAction } from '../../logs/audit/enum/audit-action.enum.js';
 import { AuditLogService } from '../../logs/audit/service/audit-log.service.js';
+import {
+  NotificationEvents,
+  type ProjectMemberAddedEvent,
+  type ProjectMemberRemovedEvent,
+  type ProjectMemberRoleUpdatedEvent,
+} from '../../notifications/events/notification.events.js';
 import { ProjectMemberUpdateDto } from '../dto/project-member-update.dto.js';
 import { ProjectMemberAddDto } from '../dto/project-member.dto.js';
 import { ProjectMember } from '../entity/project-member.entity.js';
@@ -23,6 +30,8 @@ export class ProjectMemberService {
     private readonly dataSource: DataSource,
 
     private readonly auditLogService: AuditLogService,
+
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async addProjectMember(
@@ -39,7 +48,7 @@ export class ProjectMemberService {
       }
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const member = await this.dataSource.transaction(async (manager) => {
       const member = await manager.save(ProjectMember, {
         projectId,
         role,
@@ -57,6 +66,16 @@ export class ProjectMemberService {
 
       return member;
     });
+
+    this.eventEmitter.emit(NotificationEvents.PROJECT_MEMBER_ADDED, {
+      actorId: currentUserId,
+      projectId,
+      userId,
+      memberId: member.id,
+      role: member.role,
+    } satisfies ProjectMemberAddedEvent);
+
+    return member;
   }
 
   async removeProjectMember(
@@ -74,7 +93,7 @@ export class ProjectMemberService {
       );
     }
 
-    await this.dataSource.transaction(async (manager) => {
+    const removed = await this.dataSource.transaction(async (manager) => {
       const member = await manager.findOne(ProjectMember, {
         where: { projectId, userId },
       });
@@ -92,7 +111,16 @@ export class ProjectMemberService {
         projectId,
         before: member,
       });
+
+      return member;
     });
+
+    this.eventEmitter.emit(NotificationEvents.PROJECT_MEMBER_REMOVED, {
+      actorId: currentUserId,
+      projectId,
+      userId,
+      memberId: removed.id,
+    } satisfies ProjectMemberRemovedEvent);
   }
 
   async updateProjectMemberRole(
@@ -101,39 +129,52 @@ export class ProjectMemberService {
     { role }: ProjectMemberUpdateDto,
     currentUserId: string,
   ) {
-    return this.dataSource.transaction(async (manager) => {
-      const member = await manager.findOne(ProjectMember, {
-        where: { projectId, userId },
-      });
-
-      if (!member) {
-        throw new NotFoundException('Project member not found');
-      }
-
-      if (role === ProjectRole.LEAD && member.role !== ProjectRole.LEAD) {
-        const existingLead = await manager.findOne(ProjectMember, {
-          where: { projectId, role: ProjectRole.LEAD },
+    const { before, saved } = await this.dataSource.transaction(
+      async (manager) => {
+        const member = await manager.findOne(ProjectMember, {
+          where: { projectId, userId },
         });
-        if (existingLead) {
-          throw new ConflictException('Project already has a LEAD');
+
+        if (!member) {
+          throw new NotFoundException('Project member not found');
         }
-      }
 
-      const before = { ...member };
-      member.role = role;
-      const saved = await manager.save(member);
+        if (role === ProjectRole.LEAD && member.role !== ProjectRole.LEAD) {
+          const existingLead = await manager.findOne(ProjectMember, {
+            where: { projectId, role: ProjectRole.LEAD },
+          });
+          if (existingLead) {
+            throw new ConflictException('Project already has a LEAD');
+          }
+        }
 
-      await this.auditLogService.record(manager, {
-        actorId: currentUserId,
-        action: AuditAction.PROJECT_MEMBER_ROLE_UPDATED,
-        entityType: 'project_member',
-        entityId: member.id,
-        projectId,
-        before,
-        after: saved,
-      });
+        const before = { ...member };
+        member.role = role;
+        const saved = await manager.save(member);
 
-      return saved;
-    });
+        await this.auditLogService.record(manager, {
+          actorId: currentUserId,
+          action: AuditAction.PROJECT_MEMBER_ROLE_UPDATED,
+          entityType: 'project_member',
+          entityId: member.id,
+          projectId,
+          before,
+          after: saved,
+        });
+
+        return { before, saved };
+      },
+    );
+
+    this.eventEmitter.emit(NotificationEvents.PROJECT_MEMBER_ROLE_UPDATED, {
+      actorId: currentUserId,
+      projectId,
+      userId,
+      memberId: saved.id,
+      oldRole: before.role,
+      newRole: saved.role,
+    } satisfies ProjectMemberRoleUpdatedEvent);
+
+    return saved;
   }
 }

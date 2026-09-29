@@ -10,7 +10,9 @@ import {
 } from '@nestjs/common';
 import { ResponseMessage } from '../../../common/decorators/response-message.decorator.js';
 import { ResponseInterceptor } from '../../../common/interceptors/response.interceptor.js';
+import { CurrentUser } from '../../auth/decorator/current-user.decorator.js';
 import { Roles } from '../../auth/decorator/roles.decorator.js';
+import { CurrentUserDto } from '../../auth/dto/current-user.dto.js';
 import { OrganizationMemberCreateDto } from '../dto/organization-member-create-dto.js';
 import { OrganizationMember } from '../entity/organization_member.entity.js';
 import { OrganizationRole } from '../enum/organization-role.enum.js';
@@ -29,10 +31,12 @@ export class OrganizationMemberController {
   createOrganizationMember(
     @Param('organizationId') organizationId: string,
     @Body() organizationData: OrganizationMemberCreateDto,
+    @CurrentUser() currentUser: CurrentUserDto,
   ) {
     return this.organizationMemberService.createOrganizationMember(
       organizationId,
       organizationData,
+      currentUser.sub,
     );
   }
 

@@ -4,8 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import {
+  NotificationEvents,
+  type OrganizationMemberAddedEvent,
+} from '../../notifications/events/notification.events.js';
 import { OrganizationMemberCreateDto } from '../dto/organization-member-create-dto.js';
 import { OrganizationMember } from '../entity/organization_member.entity.js';
 import { OrganizationRole } from '../enum/organization-role.enum.js';
@@ -15,11 +20,13 @@ export class OrganizationMemberService {
   constructor(
     @InjectRepository(OrganizationMember)
     private readonly organizationMemberRepository: Repository<OrganizationMember>,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async createOrganizationMember(
     organizationId: string,
     { userId, role }: OrganizationMemberCreateDto,
+    actorId: string,
   ) {
     const alreadyMember = await this.organizationMemberRepository.findOne({
       where: { organizationId, userId },
@@ -30,11 +37,21 @@ export class OrganizationMemberService {
       );
     }
 
-    return this.organizationMemberRepository.save({
+    const member = await this.organizationMemberRepository.save({
       organizationId,
       userId,
       role,
     });
+
+    this.eventEmitter.emit(NotificationEvents.ORGANIZATION_MEMBER_ADDED, {
+      actorId,
+      organizationId,
+      userId,
+      memberId: member.id,
+      role: member.role,
+    } satisfies OrganizationMemberAddedEvent);
+
+    return member;
   }
 
   async findMembership(organizationId: string, userId: string) {

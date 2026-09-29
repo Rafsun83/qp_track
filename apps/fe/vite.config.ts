@@ -11,6 +11,9 @@ export default defineConfig({
       '/api': 'http://localhost:3001',
       '/auth': 'http://localhost:3001',
       '/webhook': 'http://localhost:3001',
+      // Socket.IO (realtime notifications) - `ws: true` proxies the
+      // WebSocket upgrade, not just the HTTP long-polling fallback.
+      '/socket.io': { target: 'http://localhost:3001', ws: true },
     },
   },
 })

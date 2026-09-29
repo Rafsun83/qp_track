@@ -1,8 +1,14 @@
-import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
+import {
+  ClassSerializerInterceptor,
+  Logger,
+  ValidationPipe,
+} from '@nestjs/common';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule, ObserveInstrument } from './app.module.js';
+import { RedisIoAdapter } from './common/adapters/redis-io.adapter.js';
 import appConfig from './config/app.config.js';
+import redisConfig from './config/redis.config.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -10,7 +16,21 @@ async function bootstrap() {
   });
 
   const { port, corsOrigin } = app.get(appConfig.KEY);
+  const { url: redisUrl } = app.get(redisConfig.KEY);
+  const corsOrigins =
+    corsOrigin?.split(',').map((origin: string) => origin.trim()) ?? true;
 
+  const ioAdapter = new RedisIoAdapter(app, corsOrigins);
+  if (redisUrl) {
+    await ioAdapter.connectToRedis(redisUrl);
+  } else {
+    new Logger('Bootstrap').warn(
+      'REDIS_URL is not set - realtime notifications only reach sockets on this instance',
+    );
+  }
+  app.useWebSocketAdapter(ioAdapter);
+
+  //For swagger
   const config = new DocumentBuilder()
     .setTitle('Project Management API')
     .setDescription(
@@ -21,8 +41,7 @@ async function bootstrap() {
     .build();
 
   app.enableCors({
-    origin:
-      corsOrigin?.split(',').map((origin: string) => origin.trim()) ?? true,
+    origin: corsOrigins,
     credentials: true,
   });
 

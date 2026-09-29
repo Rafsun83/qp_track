@@ -1,0 +1,102 @@
+.notification-toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  /* Above modals (z-index 100), so a push is visible even mid-edit. */
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.notification-toast {
+  --tone: var(--info);
+  display: flex;
+  align-items: flex-start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--tone);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  pointer-events: auto;
+  animation: notification-toast-in 180ms ease-out;
+}
+
+.notification-toast--accent { --tone: var(--accent); }
+.notification-toast--success { --tone: var(--success); }
+.notification-toast--danger { --tone: var(--danger); }
+.notification-toast--warning { --tone: var(--warning); }
+
+.notification-toast__main {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 4px 12px 12px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notification-toast__icon {
+  flex-shrink: 0;
+  color: var(--tone);
+}
+
+.notification-toast__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.notification-toast__text strong {
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.notification-toast__close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin: 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.notification-toast__close:hover {
+  background: var(--accent-bg);
+  color: var(--text-h);
+}
+
+.notification-toast__main:focus-visible,
+.notification-toast__close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@keyframes notification-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-toast {
+    animation: none;
+  }
+}

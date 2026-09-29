@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import {
   createComment,
@@ -18,6 +18,7 @@ import {
 import { getUserById, searchUsersByUserName } from "../../api/users";
 import { useAuth } from "../../auth/AuthContext";
 import { Alert } from "../../components/ui/Alert";
+import { useNotificationListener } from "../../notifications/NotificationContext";
 import { Modal } from "../../components/ui/Modal";
 import type { Comment } from "../../types/comment";
 import type { Project } from "../../types/project";
@@ -294,6 +295,46 @@ export function SprintTicketsPage() {
     loadComments(ticket.id);
     setFormModalOpen(true);
   }
+
+  // Deep link from a notification: `?ticket=<id>` opens that ticket's
+  // details once the sprint's tickets have loaded, then drops the param so a
+  // refresh or closing the modal doesn't reopen it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkedTicketId = searchParams.get("ticket");
+  const openEditModalRef = useRef(openEditModal);
+  useEffect(() => {
+    openEditModalRef.current = openEditModal;
+  });
+  useEffect(() => {
+    if (!deepLinkedTicketId || ticketsLoading) return;
+    const ticket = tickets.find((t) => t.id === deepLinkedTicketId);
+    if (!ticket && tickets.length === 0) return; // not loaded yet
+    if (ticket) openEditModalRef.current(ticket);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("ticket");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [deepLinkedTicketId, tickets, ticketsLoading, setSearchParams]);
+
+  // Live updates: another member reassigned/moved/commented on a ticket in
+  // this sprint - refetch so the board (and an open ticket's comments) stay
+  // current without a manual reload.
+  useNotificationListener((notification) => {
+    if (notification.entityType !== "ticket") return;
+    if (notification.data?.sprintId !== sprintId) return;
+    loadTickets();
+    if (
+      notification.type === "TICKET_COMMENTED" &&
+      formModalOpen &&
+      editingTicketId === notification.entityId
+    ) {
+      loadComments(notification.entityId);
+    }
+  });
 
   function closeFormModal() {
     setFormModalOpen(false);

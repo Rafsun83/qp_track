@@ -1,6 +1,6 @@
 # API Guide
 
-Base URL (local dev): `http://localhost:3001` — the port comes from `PORT` (default `3000` if unset). Config is loaded by `@nestjs/config` from `.env.${NODE_ENV}` (`.env.development` when `NODE_ENV` is unset); see `.env.example` for every variable (`PORT`, `CORS_ORIGIN`, `DB_*`, `JWT_SECRET`, `JWT_EXPIRES_IN`).
+Base URL (local dev): `http://localhost:3001` — the port comes from `PORT` (default `3000` if unset). Config is loaded by `@nestjs/config` from `.env.${NODE_ENV}` (`.env.development` when `NODE_ENV` is unset); see `.env.example` for every variable (`PORT`, `CORS_ORIGIN`, `DB_*`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `REDIS_URL`).
 
 Interactive Swagger docs are served at `/docs` (e.g. `http://localhost:3001/docs`), with an "Authorize" button for the bearer token.
 
@@ -47,6 +47,11 @@ Every request/response body is JSON. Send `Content-Type: application/json` on an
 | `POST` | `/webhook/response/test` | API key |
 | `GET` | `/api/survey-response` | JWT |
 | `GET` | `/api/performance-logs` | JWT |
+| `GET` | `/api/notifications` | JWT (own only) |
+| `GET` | `/api/notifications/unread-count` | JWT (own only) |
+| `PATCH` | `/api/notifications/read-all` | JWT (own only) |
+| `PATCH` | `/api/notifications/:id/read` | JWT (own only) |
+| `WS` | `/notifications` (Socket.IO namespace) | JWT in handshake |
 | `GET` | `/health` | JWT |
 
 ## Response envelope
@@ -2053,6 +2058,170 @@ Uses `@nestjs/terminus` to check three things:
 
 ```bash
 curl http://localhost:3001/health \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
+## Realtime notifications
+
+Users get a notification when something happens that involves them: a ticket is assigned to them, a ticket they created or are assigned to changes status or gets a comment, or they are added to / removed from / have their role changed in a project or organization. Notifications are **stored** in Postgres (so offline users see them later) and **pushed live** over Socket.IO.
+
+### Setup
+
+Redis is required for multi-instance deployments and recommended locally:
+
+```bash
+docker run -d --name qp_track_redis -p 6379:6379 --restart unless-stopped redis:7-alpine
+```
+
+```dotenv
+REDIS_URL=redis://localhost:6379
+```
+
+If `REDIS_URL` is unset the app still starts, logs a warning, and falls back to Socket.IO's in-memory adapter: pushes then only reach sockets connected to the **same** instance. That's fine for one instance, broken behind a load balancer.
+
+Apply the migration once: `npm run migration:run` (adds the `notifications` table).
+
+### How it works
+
+```
+TicketService.updateTicket()                      instance A
+  └─ transaction commits
+  └─ eventEmitter.emit('ticket.updated')   ──►  NotificationListener (next tick, async)
+                                                  1. pick recipients (never the actor)
+                                                  2. INSERT into notifications
+                                                  3. gateway.emitToUser(bob, ...)
+                                                          │  Socket.IO Redis adapter
+                                                          ▼  PUBLISH on Redis
+                                               instance B (where Bob's socket lives)
+                                                  └─ socket.emit('notification:new')
+```
+
+- **Producers** (`TicketService`, `CommentService`, `ProjectMemberService`, `OrganizationMemberService`) only emit a domain event through `@nestjs/event-emitter`. They don't depend on the notifications module.
+- Events are emitted **after** the transaction commits, so a rolled-back change never notifies anyone. (Audit logs are the opposite: written *inside* the transaction.)
+- The listener runs asynchronously and swallows its own errors, so notification work never delays or fails the API response that triggered it.
+- **Redis** (`@socket.io/redis-adapter` + `ioredis`, wired in `src/common/adapters/redis-io.adapter.ts`) relays every room broadcast to all instances, so it doesn't matter which instance handled the request or which one holds the user's socket.
+
+### What triggers a notification
+
+| `type` | Trigger | Recipients | `entityType` / `entityId` | `data` |
+|---|---|---|---|---|
+| `TICKET_ASSIGNED` | `PUT .../ticket/:ticketId` changes `assigneeId` | new assignee | `ticket` / ticket id | `{ sprintId }` |
+| `TICKET_STATUS_CHANGED` | `PUT .../ticket/:ticketId` changes `status` | ticket creator + assignee | `ticket` / ticket id | `{ sprintId, from, to }` |
+| `TICKET_COMMENTED` | `POST .../comment` | ticket creator + assignee | `ticket` / ticket id | `{ sprintId, commentId }` |
+| `PROJECT_MEMBER_ADDED` | `POST /api/project/:projectId/member` | the added user | `project_member` / membership id | `{ role }` |
+| `PROJECT_MEMBER_REMOVED` | `DELETE /api/project/:projectId/member/:userId` | the removed user | `project_member` / membership id | `null` |
+| `PROJECT_ROLE_CHANGED` | `PATCH /api/project/:projectId/member/:userId` (role actually changed) | that user | `project_member` / membership id | `{ from, to }` |
+| `ORGANIZATION_MEMBER_ADDED` | `POST /api/organizations/:organizationId/members` | the added user | `organization_member` / membership id | `{ role }` |
+
+Rules applied to every type: the **actor never gets a notification for their own action**, recipients are de-duplicated, and a user who was just assigned a ticket doesn't also get a status-change notification for the same save. Creating a ticket sends nothing (the creator is its initial assignee).
+
+`data` carries the extra ids a client needs to build a link. For example, a ticket URL needs `projectId` (top-level field) plus `data.sprintId`.
+
+### Notification object
+
+```json
+{
+  "id": "4f3c1a8e-...",
+  "recipientId": "0290f661-d7f1-4b93-a7a8-f77a39294c71",
+  "actorId": "dd64ffcf-37cb-4c36-aa66-e53f7950e628",
+  "type": "TICKET_ASSIGNED",
+  "title": "Ticket assigned to you",
+  "message": "Jane Doe assigned you \"Fix login\" in Website Redesign",
+  "entityType": "ticket",
+  "entityId": "c7de719b-ed89-4396-9483-287e1c0e06f3",
+  "organizationId": "b1a2c3d4-...",
+  "projectId": "5c2b1f4a-...",
+  "data": { "sprintId": "9e1f7c3a-..." },
+  "readAt": null,
+  "createdAt": "2026-09-29T06:16:31.018Z"
+}
+```
+
+`readAt` is `null` while unread. `actorId` is `null` for system-generated notifications (none exist yet).
+
+### WebSocket: `/notifications` namespace
+
+Connect with Socket.IO (not a raw WebSocket) to the `/notifications` namespace, passing the same JWT you use for REST:
+
+```ts
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3001/notifications', {
+  auth: { token: accessToken }, // "Bearer <token>" is also accepted
+});
+
+socket.on('connect', async () => {
+  // Initial badge value: not pushed on connect, fetch it once.
+  const res = await fetch('/api/notifications/unread-count', { headers: { Authorization: `Bearer ${accessToken}` } });
+  setUnread((await res.json()).data.count);
+});
+socket.on('notification:new', (notification) => showToast(notification));
+socket.on('notification:unread-count', ({ count }) => setUnread(count));
+socket.on('connect_error', (err) => console.warn(err.message)); // "Missing token" / "Invalid or expired token"
+socket.on('notification:error', ({ message }) => { /* "Token expired": log in again, then reconnect */ });
+```
+
+- **Auth** happens in the handshake: the token comes from `auth.token` (browsers can't set headers on a WebSocket) or, for non-browser clients, an `Authorization: Bearer` header. A missing or invalid token is refused before the connection opens, and the client gets `connect_error` with the reason.
+- When the JWT **expires**, the server sends `notification:error` `{ "message": "Token expired" }` and disconnects the socket. Reconnect with a fresh token.
+- All of a user's tabs and devices join the same room (`user:<userId>`), so every one of them receives each push.
+- The channel is **push-only**: the server doesn't listen for any client events. Mark notifications as read through REST (below). Every open tab then receives the new count.
+- CORS for the socket uses the same `CORS_ORIGIN` list as HTTP.
+
+| Server → client event | Payload | When |
+|---|---|---|
+| `notification:new` | notification object (above) | a new notification for this user was stored |
+| `notification:unread-count` | `{ "count": 3 }` | after a new notification, a mark-read, or read-all |
+| `notification:error` | `{ "message": "Token expired" }` | right before the server disconnects the socket |
+
+### `GET /api/notifications`
+
+**Requires auth.** The caller's own notifications, newest first, paginated.
+
+| Query param | Type | Behavior |
+|---|---|---|
+| `unread` | `true` / `false` | `true` returns only unread; omitted or `false` returns all |
+| `page` | int | `>= 1`, default `1` |
+| `limit` | int | `1`–`100`, default `20` |
+
+**Success — `200 OK`:** message `"Notifications fetched successfully"`. `data` is `{ "items": [...notification objects], "total": 4, "page": 1, "limit": 20 }`.
+
+**Failure:** `400` (invalid/unknown query param), `401`.
+
+```bash
+curl "http://localhost:3001/api/notifications?unread=true" \
+  -H "Authorization: Bearer <token>"
+```
+
+### `GET /api/notifications/unread-count`
+
+**Requires auth.** Message `"Unread notification count fetched successfully"`, `data: { "count": 4 }`. Use it for the initial badge value after connecting the socket.
+
+### `PATCH /api/notifications/:id/read`
+
+**Requires auth.** Marks one of the caller's notifications as read and pushes the new `notification:unread-count`. Marking one that is already read changes nothing and still succeeds.
+
+**Success — `200 OK`:** message `"Notification marked as read"`, `data` is the notification with `readAt` set.
+
+**Failure:**
+- `400 Bad Request`: `:id` is not a UUID.
+- `401 Unauthorized`.
+- `404 Not Found`: no such notification **for this user**. Another user's notification id also returns 404, so ids can't be probed.
+
+```bash
+curl -X PATCH http://localhost:3001/api/notifications/4f3c1a8e-.../read \
+  -H "Authorization: Bearer <token>"
+```
+
+### `PATCH /api/notifications/read-all`
+
+**Requires auth.** Marks all of the caller's unread notifications as read and pushes `notification:unread-count` `{ "count": 0 }`.
+
+**Success — `200 OK`:** message `"All notifications marked as read"`, `data: { "updated": 3 }` (how many were unread).
+
+```bash
+curl -X PATCH http://localhost:3001/api/notifications/read-all \
   -H "Authorization: Bearer <token>"
 ```
 

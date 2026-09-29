@@ -3,8 +3,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import {
+  type CommentCreatedEvent,
+  NotificationEvents,
+} from '../../notifications/events/notification.events.js';
 import { ProjectMember } from '../../project_members/entity/project-member.entity.js';
 import { Ticket } from '../../tickets/entity/ticket.entity.js';
 import { CreateCommentDto } from '../dto/comment-create.dto.js';
@@ -22,6 +27,8 @@ export class CommentService {
 
     @InjectRepository(Ticket)
     private readonly ticketRepository: Repository<Ticket>,
+
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   private async requireMembership(
@@ -48,6 +55,7 @@ export class CommentService {
     if (!ticket) {
       throw new NotFoundException('Ticket not found');
     }
+    return ticket;
   }
 
   async createComment(
@@ -58,13 +66,26 @@ export class CommentService {
     data: CreateCommentDto,
   ) {
     await this.requireMembership(projectId, currentUserId);
-    await this.assertTicketInScope(projectId, sprintId, ticketId);
+    const ticket = await this.assertTicketInScope(
+      projectId,
+      sprintId,
+      ticketId,
+    );
 
-    return this.commentRepository.save({
+    const comment = await this.commentRepository.save({
       ...data,
       ticketId,
       userId: currentUserId,
     });
+
+    this.eventEmitter.emit(NotificationEvents.COMMENT_CREATED, {
+      actorId: currentUserId,
+      projectId,
+      commentId: comment.id,
+      ticket,
+    } satisfies CommentCreatedEvent);
+
+    return comment;
   }
 
   async getCommentsForTicket(
@@ -119,7 +140,9 @@ export class CommentService {
       throw new NotFoundException('Comment not found');
     }
     if (comment.userId !== currentUserId) {
-      throw new ForbiddenException('Only the comment author can update this comment');
+      throw new ForbiddenException(
+        'Only the comment author can update this comment',
+      );
     }
 
     // `data` is an UpdateCommentDto class instance - filter out undefined
@@ -150,7 +173,9 @@ export class CommentService {
       throw new NotFoundException('Comment not found');
     }
     if (comment.userId !== currentUserId) {
-      throw new ForbiddenException('Only the comment author can delete this comment');
+      throw new ForbiddenException(
+        'Only the comment author can delete this comment',
+      );
     }
 
     await this.commentRepository.delete({ id: commentId, ticketId });
