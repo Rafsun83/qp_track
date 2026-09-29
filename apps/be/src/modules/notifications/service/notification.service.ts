@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, LessThan, Repository } from 'typeorm';
 import { FilterNotificationDto } from '../dto/filter-notification.dto.js';
 import { Notification } from '../entity/notification.entity.js';
 import { NotificationType } from '../enum/notification-type.enum.js';
@@ -77,6 +77,14 @@ export class NotificationService {
     });
 
     return { items, total, page, limit };
+  }
+
+  // Hard-deletes every notification created before the cutoff, for all users.
+  async deleteOlderThan(cutoff: Date): Promise<number> {
+    const result = await this.notificationRepository.delete({
+      createdAt: LessThan(cutoff),
+    });
+    return result.affected ?? 0;
   }
 
   countUnread(recipientId: string): Promise<number> {

@@ -3,6 +3,7 @@ import { ConfigModule, ConfigType } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { createObserveModule } from '@nestjs/observe';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import appConfig from './config/app.config.js';
 import databaseConfig from './config/database.config.js';
@@ -11,6 +12,7 @@ import { ApiKeyModule } from './modules/apiKey/api-key.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CommentsModule } from './modules/comments/comments.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { JobsModule } from './modules/jobs/jobs.module.js';
 import { AuditLogModule } from './modules/logs/audit/audit.module.js';
 import { PerformanceLogModule } from './modules/logs/performance/performance.module.js';
 import { NotificationsModule } from './modules/notifications/notifications.module.js';
@@ -38,6 +40,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       envFilePath: `.env.${process.env.NODE_ENV ?? 'development'}`,
       load: [appConfig, databaseConfig, redisConfig],
     }),
+    ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [databaseConfig.KEY],
@@ -79,6 +82,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     WebhookModules,
     AuthModule,
     ApiKeyModule,
+    JobsModule,
   ],
 })
 export class AppModule {}

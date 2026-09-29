@@ -10,12 +10,14 @@ import { NotificationListener } from './listener/notification.listener.js';
 import { NotificationService } from './service/notification.service.js';
 
 // Producers never import this module: they emit domain events through the
-// global EventEmitter2, and NotificationListener picks them up.
+// global EventEmitter2, and NotificationListener picks them up. The service is
+// exported only for background jobs (see JobsModule).
 @Module({
   imports: [
     TypeOrmModule.forFeature([Notification, Project, Organizations, User]),
   ],
   controllers: [NotificationController],
   providers: [NotificationService, NotificationGateway, NotificationListener],
+  exports: [NotificationService],
 })
 export class NotificationsModule {}
