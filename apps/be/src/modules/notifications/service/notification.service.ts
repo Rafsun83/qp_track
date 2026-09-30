@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThan, Repository } from 'typeorm';
+import { PaginatedResult } from '../../../common/interfaces/paginated-result.js';
 import { FilterNotificationDto } from '../dto/filter-notification.dto.js';
 import { Notification } from '../entity/notification.entity.js';
 import { NotificationType } from '../enum/notification-type.enum.js';
@@ -63,6 +64,7 @@ export class NotificationService {
     return saved;
   }
 
+  // :Promise<PaginatedResult<Notification>>
   async findAll(recipientId: string, query: FilterNotificationDto) {
     const { unread, page = 1, limit = 20 } = query;
 
@@ -76,7 +78,7 @@ export class NotificationService {
       take: limit,
     });
 
-    return { items, total, page, limit };
+    return new PaginatedResult(items, total, page, limit);
   }
 
   // Hard-deletes every notification created before the cutoff, for all users.
