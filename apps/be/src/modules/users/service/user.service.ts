@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
+import { PaginatedResult } from '../../../common/interfaces/paginated-result.js';
 import { CreateUserDto } from '../dto/create-user.dto.js';
 import { FindUsersQueryDto } from '../dto/find-users-query.dto.js';
 import { UpdateUserDto } from '../dto/update-user.dto.js';
@@ -20,8 +21,8 @@ export class UserService {
     private userRepository: Repository<User>,
   ) {}
 
-  findAll(query: FindUsersQueryDto = {}): Promise<User[]> {
-    const { userName, loginCount } = query;
+  async findAll(query: FindUsersQueryDto = {}) {
+    const { userName, loginCount, page = 1, limit = 20 } = query;
     const qb = this.userRepository.createQueryBuilder('user');
 
     if (userName) {
@@ -33,17 +34,13 @@ export class UserService {
     if (loginCount !== undefined) {
       qb.andWhere('user.loginCount = :loginCount', { loginCount });
     }
-    // if (userName) {
-    //   qb.andWhere('user.userName % :userName', { userName })
-    //     .addSelect('similarity(user.userName, :userName)', 'sim')
-    //     .orderBy('sim', 'DESC'); // best matches first
-    // }
 
-    // if (loginCount !== undefined) {
-    //   qb.andWhere('user.loginCount = :loginCount', { loginCount });
-    // }
+    const [items, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
 
-    return qb.getMany();
+    return new PaginatedResult(items, total, page, limit);
   }
 
   findOne(id: string): Promise<User | null> {
