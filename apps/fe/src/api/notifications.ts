@@ -1,8 +1,8 @@
-import { apiRequest } from "./client";
+import { apiRequest, apiRequestPaginated } from "./client";
 import type { AppNotification, NotificationPage } from "../types/notification";
 
 /** GET /api/notifications - the caller's own notifications, newest first. */
-export function getNotifications(
+export async function getNotifications(
   token: string,
   params: { page?: number; limit?: number; unread?: boolean } = {},
 ): Promise<NotificationPage> {
@@ -11,7 +11,11 @@ export function getNotifications(
   if (params.limit) query.set("limit", String(params.limit));
   if (params.unread) query.set("unread", "true");
   const qs = query.toString();
-  return apiRequest<NotificationPage>(`/api/notifications${qs ? `?${qs}` : ""}`, { token });
+  const { items, pagination } = await apiRequestPaginated<AppNotification>(
+    `/api/notifications${qs ? `?${qs}` : ""}`,
+    { token },
+  );
+  return { items, total: pagination.total, page: pagination.page, limit: pagination.limit };
 }
 
 /** GET /api/notifications/unread-count */

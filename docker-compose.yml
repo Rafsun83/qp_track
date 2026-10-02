@@ -1,0 +1,102 @@
+name: qp_track
+
+x-node-dev: &node-dev
+  build:
+    context: .
+    dockerfile: Dockerfile.dev
+  image: qp_track-dev
+  working_dir: /app
+  volumes:
+    - .:/app
+    # Keep the container's (Linux-built) node_modules instead of the host's.
+    - /app/node_modules
+    - /app/apps/be/node_modules
+    - /app/apps/fe/node_modules
+    - /app/packages/shared-types/node_modules
+  networks:
+    - qp_track_network
+
+services:
+  db:
+    image: postgres:17
+    container_name: qp_track_db
+    restart: unless-stopped
+    networks:
+      - qp_track_network
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: qp_track_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres17_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d qp_track_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: qp_track_redis
+    restart: unless-stopped
+    networks:
+      - qp_track_network
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  be:
+    <<: *node-dev
+    container_name: qp_track_be
+    # Apply pending TypeORM migrations, then start Nest in watch mode.
+    command: sh -c "npm run migration:run --workspace=be && npm run dev --workspace=be"
+    environment:
+      NODE_ENV: development
+      # Real env vars win over apps/be/.env.development (dotenv / @nestjs/config
+      # don't override existing values), so these point at the compose services.
+      PORT: 3001
+      CORS_ORIGIN: http://localhost:5173
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: password
+      DB_NAME: qp_track_db
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  fe:
+    <<: *node-dev
+    container_name: qp_track_fe
+    command: npm run dev --workspace=fe -- --host 0.0.0.0 --port 5173
+    environment:
+      VITE_PROXY_TARGET: http://be:3001
+    ports:
+      - "5173:5173"
+    depends_on:
+      - be
+
+networks:
+  qp_track_network:
+    name: qp_track_network
+    driver: bridge
+
+volumes:
+  # Reuse the volume the existing standalone qp_track_db container already
+  # uses, so seeded data carries over.
+  postgres17_data:
+    external: true
+  redis_data:

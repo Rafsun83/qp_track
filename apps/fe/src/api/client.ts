@@ -35,7 +35,8 @@ function extractErrorMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+/** Sends the request and returns the parsed body, throwing `ApiError` on non-2xx. */
+async function sendRequest(path: string, options: RequestOptions): Promise<unknown> {
   const { method = "GET", body, token, headers: extraHeaders } = options;
 
   const headers: Record<string, string> = { ...extraHeaders };
@@ -63,6 +64,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw new ApiError(response.status, extractErrorMessage(parsed, response.statusText), parsed);
   }
 
+  return parsed;
+}
+
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const parsed = await sendRequest(path, options);
+
   // Every successful backend response is wrapped in a shared envelope:
   // { statusCode, message, data, timestamp }. Unwrap it here, once, so
   // every caller of apiRequest keeps getting back the plain payload it
@@ -71,4 +78,45 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   return (parsed && typeof parsed === "object" && "data" in parsed
     ? (parsed as { data: unknown }).data
     : parsed) as T;
+}
+
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
+export interface Paginated<T> {
+  items: T[];
+  pagination: PaginationMeta;
+}
+
+/**
+ * For endpoints that return a backend `PaginatedResult`: the envelope is
+ * { statusCode, message, data: T[], pagination, timestamp }, and `apiRequest`
+ * would drop `pagination` while unwrapping `data`, so keep both here.
+ */
+export async function apiRequestPaginated<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Paginated<T>> {
+  const parsed = (await sendRequest(path, options)) as {
+    data?: T[];
+    pagination?: PaginationMeta;
+  } | null;
+  const items = parsed?.data ?? [];
+  return {
+    items,
+    pagination: parsed?.pagination ?? {
+      page: 1,
+      limit: items.length,
+      total: items.length,
+      totalPages: 1,
+      hasNext: false,
+      hasPrev: false,
+    },
+  };
 }

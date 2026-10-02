@@ -1,0 +1,106 @@
+# Production stack. Usage:
+#   cp .env.prod.example .env.prod   # then fill in real secrets
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+name: qp_track_prod
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.prod}
+      POSTGRES_DB: ${DB_NAME:-qp_track_db}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - qp_track_prod_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - qp_track_prod_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-off: applies pending TypeORM migrations, then exits. `be` only starts
+  # once this has finished successfully.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/be/Dockerfile
+    image: qp_track-be:latest
+    command: ["node", "/app/node_modules/typeorm/cli.js", "migration:run", "-d", "dist/data-source.js"]
+    environment: &be-env
+      NODE_ENV: production
+      PORT: 3001
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.prod}
+      DB_NAME: ${DB_NAME:-qp_track_db}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.prod}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      REDIS_URL: redis://redis:6379
+    networks:
+      - qp_track_prod_network
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  be:
+    image: qp_track-be:latest
+    restart: unless-stopped
+    environment: *be-env
+    networks:
+      - qp_track_prod_network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    # /health sits behind the global auth guard, so any non-5xx response
+    # (including 401) means Nest is up and serving.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  fe:
+    build:
+      context: .
+      dockerfile: apps/fe/Dockerfile
+    image: qp_track-fe:latest
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    networks:
+      - qp_track_prod_network
+    depends_on:
+      be:
+        condition: service_healthy
+
+networks:
+  qp_track_prod_network:
+    name: qp_track_prod_network
+    driver: bridge
+
+volumes:
+  pg_data:
+  redis_data:

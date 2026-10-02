@@ -96,3 +96,9 @@ npx turbo link
 - [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
 - [Configuration Options](https://turborepo.dev/docs/reference/configuration)
 - [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+
+1. frontend
+2. backend
+3. database
+4. redis
+   All service will be run in under the one network.

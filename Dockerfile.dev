@@ -1,0 +1,18 @@
+# Dev image shared by `be` and `fe`. Installs the whole npm workspace at the
+# repo root (never inside apps/* - see CLAUDE.md); source is bind-mounted over
+# /app at runtime by docker-compose.yml.
+FROM node:24-bookworm-slim
+
+# Match the npm version pinned in package.json `devEngines`.
+RUN npm install -g npm@11.12.1
+
+WORKDIR /app
+
+COPY package.json package-lock.json .npmrc ./
+COPY apps/be/package.json apps/be/
+COPY apps/fe/package.json apps/fe/
+COPY packages/shared-types/package.json packages/shared-types/
+COPY packages/eslint-config/package.json packages/eslint-config/
+COPY packages/typescript-config/package.json packages/typescript-config/
+
+RUN npm ci

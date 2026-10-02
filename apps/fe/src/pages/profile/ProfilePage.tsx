@@ -23,7 +23,10 @@ export function ProfilePage() {
         if (!cancelled) setUser(data);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load profile.");
+        if (!cancelled)
+          setError(
+            err instanceof Error ? err.message : "Failed to load profile.",
+          );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
